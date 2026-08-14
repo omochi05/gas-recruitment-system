@@ -1,13 +1,13 @@
-import { Candidate } from "../domain/Candidate";
+import type { Candidate } from "../domain/Candidate";
 
-export interface AiCandidateData{
-    education?: string; 
-    careerSummary?: string;
-    qualifications?:string;
-    selfPr?:string;
-    motivation?:string;
-    technicalExperience?:string;
-    teamExperience?:string;
+export interface AiCandidateData {
+  education?: string | undefined;
+  careerSummary?: string | undefined;
+  qualifications?: string | undefined;
+  selfPr?: string | undefined;
+  motivation?: string | undefined;
+  technicalExperience?: string | undefined;
+  teamExperience?: string | undefined;
 }
 
 export class AiDataPolicy {
