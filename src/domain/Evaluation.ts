@@ -19,23 +19,22 @@ export type EvidenceLevel =
 export interface EvaluationItem {
   criterionId: string;
   criterionName: string;
-
   status: EvaluationStatus;
-
   score?: EvaluationScore;
   evidenceLevel: EvidenceLevel;
-
   reason: string;
   followUpQuestion?: string;
 }
 
-export interface EvaluationResult {
-  candidateKey: string;
-  departmentId: string;
-
+export interface AiEvaluationResult {
   evaluations: EvaluationItem[];
-
   strengths: string[];
   concerns: string[];
   reviewPoints: string[];
+}
+
+export interface EvaluationResult
+  extends AiEvaluationResult {
+  candidateKey: string;
+  departmentId: string;
 }
