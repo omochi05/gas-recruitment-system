@@ -1,0 +1,903 @@
+import type {
+  ResumeImportRecord,
+  ResumeSource,
+} from '../domain/Resume';
+
+import type {
+  ResumeCandidateRepository,
+} from './ResumeRepositories';
+
+import {
+  ResumeConfig,
+} from '../gas/config';
+
+export class GasResumeCandidateRepository
+  implements ResumeCandidateRepository
+{
+  constructor(
+    private readonly spreadsheetId: string,
+  ) {}
+
+  save(
+    candidate: ResumeImportRecord,
+    processStatus: string,
+    processMessage: string,
+  ): void {
+    const sheet =
+      this.getOrCreateInterviewerSheet();
+
+    const headers =
+      this.getHeaders(sheet);
+
+    const row =
+      headers.map(
+        (header: string): unknown =>
+          this.resolveValue(
+            header,
+            candidate,
+            processStatus,
+            processMessage,
+          ),
+      );
+
+    sheet.appendRow(row);
+
+    this.formatInterviewerSheet(
+      sheet,
+    );
+  }
+
+  saveError(
+    source: ResumeSource,
+    message: string,
+  ): void {
+    const sheet =
+      this.getOrCreateInterviewerSheet();
+
+    const headers =
+      this.getHeaders(sheet);
+
+    const row =
+      headers.map(
+        (header: string): unknown => {
+          switch (header) {
+            case '面接ステータス':
+              return ResumeConfig
+                .defaultInterviewStatus;
+
+            case '処理ステータス':
+              return 'エラー';
+
+            case '処理メッセージ':
+              return this.sanitize(
+                message,
+              );
+
+            case '元ファイル名':
+              return this.sanitize(
+                source.fileName,
+              );
+
+            case '履歴書リンク':
+              return this.createDriveUrl(
+                source.fileId,
+              );
+
+            case 'タイムスタンプ':
+              return new Date();
+
+            default:
+              return '';
+          }
+        },
+      );
+
+    sheet.appendRow(row);
+  }
+
+  isDuplicate(
+    candidate: ResumeImportRecord,
+  ): boolean {
+    const sheet =
+      this.getOrCreateInterviewerSheet();
+
+    const values =
+      sheet
+        .getDataRange()
+        .getValues();
+
+    if (values.length < 2) {
+      return false;
+    }
+
+    const headers =
+      values[0]
+        ?.map(
+          (value: unknown): string =>
+            String(value).trim(),
+        ) ?? [];
+
+    const nameIndex =
+      headers.indexOf(
+        '氏名',
+      );
+
+    const emailIndex =
+      headers.indexOf(
+        'メールアドレス',
+      );
+
+    const phoneIndex =
+      headers.indexOf(
+        '電話番号',
+      );
+
+    if (nameIndex === -1) {
+      return false;
+    }
+
+    const name =
+      String(
+        candidate.name ?? '',
+      ).trim();
+
+    const email =
+      this.normalizeEmail(
+        candidate.email,
+      );
+
+    const phone =
+      this.normalizePhone(
+        candidate.phone,
+      );
+
+    if (!name) {
+      return false;
+    }
+
+    return values
+      .slice(1)
+      .some(
+        (row: unknown[]): boolean => {
+          const storedName =
+            String(
+              row[nameIndex] ?? '',
+            ).trim();
+
+          if (
+            storedName !==
+            name
+          ) {
+            return false;
+          }
+
+          const storedEmail =
+            emailIndex >= 0
+              ? this.normalizeEmail(
+                  row[emailIndex],
+                )
+              : '';
+
+          const storedPhone =
+            phoneIndex >= 0
+              ? this.normalizePhone(
+                  row[phoneIndex],
+                )
+              : '';
+
+          const sameEmail =
+            Boolean(email) &&
+            Boolean(storedEmail) &&
+            email ===
+              storedEmail;
+
+          const samePhone =
+            Boolean(phone) &&
+            Boolean(storedPhone) &&
+            phone ===
+              storedPhone;
+
+          return (
+            sameEmail ||
+            samePhone
+          );
+        },
+      );
+  }
+
+  rebuildApplicantList(): void {
+    const spreadsheet =
+      SpreadsheetApp.openById(
+        this.spreadsheetId,
+      );
+
+    const sourceSheet =
+      this.getOrCreateInterviewerSheet();
+
+    let targetSheet =
+      spreadsheet.getSheetByName(
+        ResumeConfig
+          .applicantListSheetName,
+      );
+
+    if (!targetSheet) {
+      targetSheet =
+        spreadsheet.insertSheet(
+          ResumeConfig
+            .applicantListSheetName,
+        );
+    }
+
+    targetSheet.clear();
+
+    const headers =
+      this.getHeaders(
+        sourceSheet,
+      );
+
+    const formula =
+      this.createApplicantListFormula(
+        headers,
+      );
+
+    targetSheet
+      .getRange(
+        'A1',
+      )
+      .setFormula(
+        formula,
+      );
+
+    targetSheet.setFrozenRows(
+      1,
+    );
+
+    SpreadsheetApp.flush();
+
+    const headerWidth =
+      ResumeConfig
+        .applicantListFields
+        .length;
+
+    targetSheet
+      .getRange(
+        1,
+        1,
+        1,
+        headerWidth,
+      )
+      .setFontWeight(
+        'bold',
+      )
+      .setBackground(
+        '#4a86e8',
+      )
+      .setFontColor(
+        '#ffffff',
+      )
+      .setWrap(
+        true,
+      )
+      .setVerticalAlignment(
+        'middle',
+      );
+
+    this.protectApplicantList(
+      targetSheet,
+    );
+  }
+
+  private getOrCreateInterviewerSheet():
+    GoogleAppsScript.Spreadsheet.Sheet {
+    const spreadsheet =
+      SpreadsheetApp.openById(
+        this.spreadsheetId,
+      );
+
+    let sheet =
+      spreadsheet.getSheetByName(
+        ResumeConfig.sheetName,
+      );
+
+    if (!sheet) {
+      sheet =
+        spreadsheet.insertSheet(
+          ResumeConfig.sheetName,
+        );
+
+      const headers = [
+        ...ResumeConfig.resumeFields,
+        '面接ステータス',
+        '処理ステータス',
+        '処理メッセージ',
+        '元ファイル名',
+        '履歴書リンク',
+        'タイムスタンプ',
+      ];
+
+      sheet
+        .getRange(
+          1,
+          1,
+          1,
+          headers.length,
+        )
+        .setValues([
+          headers,
+        ]);
+
+      sheet.setFrozenRows(
+        1,
+      );
+
+      this.formatInterviewerSheet(
+        sheet,
+      );
+    }
+
+    return sheet;
+  }
+
+  private getHeaders(
+    sheet:
+      GoogleAppsScript.Spreadsheet.Sheet,
+  ): string[] {
+    const lastColumn =
+      sheet.getLastColumn();
+
+    if (lastColumn < 1) {
+      return [];
+    }
+
+    const values =
+      sheet
+        .getRange(
+          1,
+          1,
+          1,
+          lastColumn,
+        )
+        .getValues()[0];
+
+    if (!values) {
+      return [];
+    }
+
+    return values.map(
+      (value: unknown): string =>
+        String(value).trim(),
+    );
+  }
+
+  private resolveValue(
+    header: string,
+    candidate:
+      ResumeImportRecord,
+    processStatus: string,
+    processMessage: string,
+  ): unknown {
+    switch (header) {
+      case '氏名':
+        return this.sanitize(
+          candidate.name,
+        );
+
+      case 'フリガナ':
+        return this.sanitize(
+          candidate.furigana,
+        );
+
+      case '生年月日':
+        return this.sanitize(
+          candidate.birthDate,
+        );
+
+      case '年齢':
+        return this.sanitize(
+          candidate.age,
+        );
+
+      case '性別':
+        return this.sanitize(
+          candidate.gender,
+        );
+
+      case '現住所':
+        return this.sanitize(
+          candidate.address,
+        );
+
+      case '電話番号':
+        return this.sanitize(
+          candidate.phone,
+        );
+
+      case 'メールアドレス':
+        return this.sanitize(
+          candidate.email,
+        );
+
+      case '最終学歴':
+        return this.sanitize(
+          candidate.finalEducation,
+        );
+
+      case '学歴サマリー':
+        return this.sanitize(
+          candidate.educationSummary,
+        );
+
+      case '直近の職歴':
+        return this.sanitize(
+          candidate.latestCareer,
+        );
+
+      case '職歴サマリー':
+        return this.sanitize(
+          candidate.careerSummary,
+        );
+
+      case '保有資格':
+        return this.sanitize(
+          candidate.qualifications,
+        );
+
+      case '自己PR要約':
+        return this.sanitize(
+          candidate.selfPrSummary,
+        );
+
+      case '特記事項':
+        return this.sanitize(
+          candidate.notes,
+        );
+
+      case '面接ステータス':
+        return (
+          candidate
+            .interviewStatus ||
+          ResumeConfig
+            .defaultInterviewStatus
+        );
+
+      case '処理ステータス':
+        return this.sanitize(
+          processStatus,
+        );
+
+      case '処理メッセージ':
+        return this.sanitize(
+          processMessage,
+        );
+
+      case '元ファイル名':
+        return this.sanitize(
+          candidate
+            .sourceFileName,
+        );
+
+      case '履歴書リンク':
+        return this.createDriveUrl(
+          candidate
+            .sourceFileId,
+        );
+
+      case 'タイムスタンプ':
+        return (
+          candidate
+            .importedAt ||
+          new Date()
+        );
+
+      default:
+        return '';
+    }
+  }
+
+  private formatInterviewerSheet(
+    sheet:
+      GoogleAppsScript.Spreadsheet.Sheet,
+  ): void {
+    const headers =
+      this.getHeaders(
+        sheet,
+      );
+
+    if (
+      headers.length === 0
+    ) {
+      return;
+    }
+
+    sheet
+      .getRange(
+        1,
+        1,
+        1,
+        headers.length,
+      )
+      .setFontWeight(
+        'bold',
+      )
+      .setBackground(
+        '#4a86e8',
+      )
+      .setFontColor(
+        '#ffffff',
+      )
+      .setWrap(
+        true,
+      )
+      .setVerticalAlignment(
+        'middle',
+      );
+
+    const statusIndex =
+      headers.indexOf(
+        '面接ステータス',
+      );
+
+    if (
+      statusIndex >= 0
+    ) {
+      const validation =
+        SpreadsheetApp
+          .newDataValidation()
+          .requireValueInList(
+            [
+              ...ResumeConfig
+                .interviewStatusOptions,
+            ],
+            true,
+          )
+          .setAllowInvalid(
+            false,
+          )
+          .build();
+
+      sheet
+        .getRange(
+          2,
+          statusIndex + 1,
+          ResumeConfig
+            .limits
+            .setupRowBuffer,
+          1,
+        )
+        .setDataValidation(
+          validation,
+        );
+    }
+
+    if (
+      !sheet.getFilter()
+    ) {
+      sheet
+        .getRange(
+          1,
+          1,
+          Math.max(
+            sheet.getMaxRows(),
+            2,
+          ),
+          headers.length,
+        )
+        .createFilter();
+    }
+
+    const wrapColumns =
+      new Set([
+        '現住所',
+        '学歴サマリー',
+        '職歴サマリー',
+        '自己PR要約',
+        '特記事項',
+        '処理メッセージ',
+      ]);
+
+    headers.forEach(
+      (
+        header: string,
+        index: number,
+      ): void => {
+        const column =
+          index + 1;
+
+        if (
+          wrapColumns.has(
+            header,
+          )
+        ) {
+          sheet
+            .setColumnWidth(
+              column,
+              280,
+            );
+
+          sheet
+            .getRange(
+              1,
+              column,
+              sheet.getMaxRows(),
+              1,
+            )
+            .setWrap(
+              true,
+            )
+            .setVerticalAlignment(
+              'top',
+            );
+        } else {
+          sheet
+            .autoResizeColumn(
+              column,
+            );
+        }
+      },
+    );
+  }
+
+  private createApplicantListFormula(
+    headers: string[],
+  ): string {
+    const selectedColumns:
+      string[] = [];
+
+    const labels:
+      string[] = [];
+
+    for (
+      const field
+      of ResumeConfig
+        .applicantListFields
+    ) {
+      const index =
+        headers.indexOf(
+          field,
+        );
+
+      if (index === -1) {
+        continue;
+      }
+
+      const letter =
+        this.columnToLetter(
+          index + 1,
+        );
+
+      selectedColumns.push(
+        letter,
+      );
+
+      labels.push(
+        `${letter} '${field}'`,
+      );
+    }
+
+    const nameIndex =
+      headers.indexOf(
+        '氏名',
+      );
+
+    const timestampIndex =
+      headers.indexOf(
+        'タイムスタンプ',
+      );
+
+    if (
+      nameIndex === -1 ||
+      timestampIndex === -1
+    ) {
+      throw new Error(
+        '応募者一覧に必要な氏名またはタイムスタンプ列がありません。',
+      );
+    }
+
+    const nameColumn =
+      this.columnToLetter(
+        nameIndex + 1,
+      );
+
+    const timestampColumn =
+      this.columnToLetter(
+        timestampIndex + 1,
+      );
+
+    const lastColumn =
+      this.columnToLetter(
+        headers.length,
+      );
+
+    const query = [
+      `select ${selectedColumns.join(', ')}`,
+      `where ${nameColumn} is not null`,
+      `and ${nameColumn} <> ''`,
+      `order by ${timestampColumn} desc`,
+      `label ${labels.join(', ')}`,
+    ].join(' ');
+
+    return (
+      `=QUERY('${ResumeConfig.sheetName}'!A1:${lastColumn}, ` +
+      `"${query}", 1)`
+    );
+  }
+
+  private protectApplicantList(
+    sheet:
+      GoogleAppsScript.Spreadsheet.Sheet,
+  ): void {
+    const admins =
+      this.getAdminEmails();
+
+    if (
+      admins.length === 0
+    ) {
+      return;
+    }
+
+    const protections =
+      sheet.getProtections(
+        SpreadsheetApp
+          .ProtectionType
+          .SHEET,
+      );
+
+    protections
+      .filter(
+        (
+          protection:
+            GoogleAppsScript
+              .Spreadsheet
+              .Protection,
+        ): boolean =>
+          protection
+            .getDescription() ===
+          ResumeConfig
+            .protectionDescriptions
+            .applicantList,
+      )
+      .forEach(
+        (
+          protection:
+            GoogleAppsScript
+              .Spreadsheet
+              .Protection,
+        ): void => {
+          protection.remove();
+        },
+      );
+
+    const protection =
+      sheet
+        .protect()
+        .setDescription(
+          ResumeConfig
+            .protectionDescriptions
+            .applicantList,
+        );
+
+    protection.setWarningOnly(
+      false,
+    );
+
+    const editors =
+      protection.getEditors();
+
+    if (
+      editors.length > 0
+    ) {
+      protection.removeEditors(
+        editors,
+      );
+    }
+
+    protection.addEditors(
+      admins,
+    );
+  }
+
+  private getAdminEmails():
+    string[] {
+    return String(
+      PropertiesService
+        .getScriptProperties()
+        .getProperty(
+          ResumeConfig
+            .properties
+            .adminEmails,
+        ) ?? '',
+    )
+      .split(',')
+      .map(
+        (email: string): string =>
+          email.trim(),
+      )
+      .filter(
+        (email: string): boolean =>
+          email !== '',
+      );
+  }
+
+  private createDriveUrl(
+    fileId: string,
+  ): string {
+    if (!fileId) {
+      return '';
+    }
+
+    return (
+      'https://drive.google.com/open?id=' +
+      encodeURIComponent(
+        fileId,
+      )
+    );
+  }
+
+  private normalizeEmail(
+    value: unknown,
+  ): string {
+    return String(
+      value ?? '',
+    )
+      .trim()
+      .toLowerCase();
+  }
+
+  private normalizePhone(
+    value: unknown,
+  ): string {
+    return String(
+      value ?? '',
+    )
+      .replace(
+        /[^\d+]/g,
+        '',
+      )
+      .trim();
+  }
+
+  private sanitize(
+    value: unknown,
+  ): string {
+    const text =
+      String(
+        value ?? '',
+      );
+
+    if (
+      /^[=+\-@]/.test(
+        text.trimStart(),
+      )
+    ) {
+      return `'${text}`;
+    }
+
+    return text;
+  }
+
+  private columnToLetter(
+    column: number,
+  ): string {
+    let result = '';
+    let value = column;
+
+    while (
+      value > 0
+    ) {
+      const remainder =
+        (value - 1) % 26;
+
+      result =
+        String.fromCharCode(
+          65 + remainder,
+        ) + result;
+
+      value =
+        Math.floor(
+          (value - 1) / 26,
+        );
+    }
+
+    return result;
+  }
+}
