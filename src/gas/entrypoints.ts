@@ -1,313 +1,793 @@
 import {
-  EvaluationService,
-} from '../application/EvaluationService';
+  ResumeImportService,
+} from '../application/ResumeImportService';
 
 import {
-  GasCandidateRepository,
-} from '../infrastructure/GasCandidateRepository';
+  ResumeMaintenanceService,
+} from '../application/ResumeMaintenanceService';
 
 import {
-  GasCriteriaRepository,
-} from '../infrastructure/GasCriteriaRepository';
+  ResumeSetupService,
+} from '../application/ResumeSetupService';
 
 import {
-  GasEvaluationHistoryRepository,
-} from '../infrastructure/GasEvaluationHistoryRepository';
+  AiEvaluationLegacyService,
+} from '../application/AiEvaluationLegacyService';
 
 import {
-  GasGeminiClient,
-} from '../infrastructure/GasGeminiClient';
+  GasDriveResumeRepository,
+} from '../infrastructure/GasDriveResumeRepository';
 
 import {
-  GasUserIdentityProvider,
-} from '../infrastructure/GasUserIdentityProvider';
+  GasResumeGeminiClient,
+} from '../infrastructure/GasResumeGeminiClient';
 
 import {
-  ScriptPropertiesPermissionRepository,
-} from '../infrastructure/ScriptPropertiesPermissionRepository';
+  GasResumeCandidateRepository,
+} from '../infrastructure/GasResumeCandidateRepository';
 
 import {
-  SpreadsheetEvaluationInputReader,
-} from '../infrastructure/SpreadsheetEvaluationInputReader';
+  GasImportLogRepository,
+} from '../infrastructure/GasImportLogRepository';
 
 import {
-  SpreadsheetEvaluationResultWriter,
-} from '../infrastructure/SpreadsheetEvaluationResultWriter';
+  ResumeConfig,
+} from './config';
 
-import {
-  AuthorizationService,
-} from '../security/AuthorizationService';
-
-import {
-  AiDataPolicy,
-} from '../security/AiDataPolicy';
-
-import {
-  SpreadsheetSanitizer,
-} from '../security/SpreadsheetSanitizer';
-
-// ========================================
-// Script Properties
-// ========================================
-
-const PROP_GEMINI_API_KEY =
-  'GEMINI_API_KEY';
-
-const PROP_SOURCE_SPREADSHEET_ID =
-  'SOURCE_SPREADSHEET_ID';
-
-const PROP_ADMIN_EMAIL =
-  'AI_ADMIN_EMAIL';
-
-const PROP_EVALUATOR_EMAILS =
-  'AI_EVALUATOR_EMAILS';
-
-// ========================================
-// Sheet Names
-// ========================================
-
-const CANDIDATE_SHEET_NAME =
-  '応募者一覧';
-
-const CRITERIA_SHEET_NAME =
-  '評価基準マスタ';
-
-const HISTORY_SHEET_NAME =
-  'AI評価履歴';
-
-const EVALUATION_UI_SHEET_NAME =
-  'AI評価';
-
-// ========================================
-// Application Context
-// ========================================
-
-interface ApplicationContext {
-  evaluationService:
-    EvaluationService;
-
-  inputReader:
-    SpreadsheetEvaluationInputReader;
-
-  resultWriter:
-    SpreadsheetEvaluationResultWriter;
+interface SelectionChangeEvent {
+  range:
+    GoogleAppsScript
+      .Spreadsheet
+      .Range;
 }
 
-// ========================================
-// GAS Public Entry Points
-// ========================================
+interface ResumeCommonServices {
+  logs:
+    GasImportLogRepository;
 
-/**
- * Spreadsheetを開いた際に
- * AI評価メニューを追加する。
- *
- * GASから直接公開する処理は
- * 必要最低限に留める。
- */
+  maintenance:
+    ResumeMaintenanceService;
+
+  setup:
+    ResumeSetupService;
+
+  candidates:
+    GasResumeCandidateRepository;
+}
+
+const aiEvaluationService =
+  new AiEvaluationLegacyService();
+
 export function onOpen(): void {
-  SpreadsheetApp
-    .getUi()
-    .createMenu('AI評価')
-    .addItem(
-      'AI評価を実行',
-      'evaluateSelectedApplicant',
-    )
-    .addToUi();
+  initializeResumeSession();
+
+  createResumeImportMenu();
+
+  createAiEvaluationMenu();
 }
 
-/**
- * Spreadsheet上で選択された
- * 応募者・部門を利用してAI評価を実行する。
- *
- * GAS側では業務ロジックを持たず、
- * Application層へ処理を委譲する。
- */
-export function evaluateSelectedApplicant(): void {
+export function onSelectionChange(
+  e: SelectionChangeEvent,
+): void {
   try {
-    const context =
-      createApplicationContext();
+    if (
+      !e ||
+      !e.range
+    ) {
+      return;
+    }
 
-    const input =
-      context.inputReader.read();
+    const sheetName =
+      e.range
+        .getSheet()
+        .getName();
 
-    const result =
-      context.evaluationService.evaluate(
-        input.candidateKey,
-        input.departmentId,
+    const userProperties =
+      PropertiesService
+        .getUserProperties();
+
+    const previous =
+      userProperties
+        .getProperty(
+          'LAST_VIEWED_SHEET',
+        );
+
+    if (
+      previous ===
+      sheetName
+    ) {
+      return;
+    }
+
+    userProperties
+      .setProperty(
+        'LAST_VIEWED_SHEET',
+        sheetName,
       );
 
-    context.resultWriter.write(
-      result,
+    if (
+      sheetName !==
+        ResumeConfig.sheetName &&
+      sheetName !==
+        ResumeConfig
+          .applicantListSheetName
+    ) {
+      return;
+    }
+
+    const services =
+      createResumeCommonServices();
+
+    services.logs.access(
+      'シート選択',
+      `シート「${sheetName}」に切り替え`,
     );
+  } catch (
+    error: unknown
+  ) {
+    console.error(
+      'onSelectionChangeでエラーが発生しました。',
+      error,
+    );
+  }
+}
+
+export function onEdit(
+  e:
+    GoogleAppsScript
+      .Events
+      .SheetsOnEdit,
+): void {
+  try {
+    if (
+      !e ||
+      !e.range
+    ) {
+      return;
+    }
+
+    const sheet =
+      e.range.getSheet();
+
+    if (
+      sheet.getName() !==
+      ResumeConfig.sheetName
+    ) {
+      return;
+    }
+
+    const services =
+      createResumeCommonServices();
+
+    const lastColumn =
+      sheet.getLastColumn();
+
+    if (
+      lastColumn < 1
+    ) {
+      return;
+    }
+
+    const headerRow =
+      sheet
+        .getRange(
+          1,
+          1,
+          1,
+          lastColumn,
+        )
+        .getValues()[0];
+
+    const headers =
+      headerRow?.map(
+        (
+          value: unknown,
+        ): string =>
+          String(
+            value,
+          ).trim(),
+      ) ?? [];
+
+    const columnName =
+      headers[
+        e.range.getColumn() - 1
+      ] ?? '不明な列';
+
+    const safeValueColumns =
+      new Set([
+        '面接ステータス',
+        '処理ステータス',
+      ]);
+
+    let detail =
+      `セル ${e.range.getA1Notation()} / 列: ${columnName}`;
+
+    if (
+      e.range.getNumRows() ===
+        1 &&
+      e.range.getNumColumns() ===
+        1 &&
+      safeValueColumns.has(
+        columnName,
+      )
+    ) {
+      detail +=
+        ` / 新しい値: ${String(
+          e.value ?? '',
+        )}`;
+    }
+
+    services.logs.access(
+      '面接官シート編集',
+      detail,
+    );
+  } catch (
+    error: unknown
+  ) {
+    console.error(
+      'onEditでエラーが発生しました。',
+      error,
+    );
+  }
+}
+
+export function setupApiKey(): void {
+  createResumeCommonServices()
+    .setup
+    .setupApiKey();
+}
+
+export function setupFolders(): void {
+  createResumeCommonServices()
+    .setup
+    .setupFolders();
+}
+
+export function importResumes(): void {
+  const importService =
+    createResumeImportService();
+
+  const lock =
+    LockService
+      .getScriptLock();
+
+  if (
+    !lock.tryLock(
+      ResumeConfig
+        .limits
+        .importLockTimeoutMs,
+    )
+  ) {
+    throw new Error(
+      '別の履歴書取込処理が実行中です。しばらくしてから再実行してください。',
+    );
+  }
+
+  try {
+    const results =
+      importService.execute();
+
+    const processed =
+      results.filter(
+        (
+          result,
+        ): boolean =>
+          result.status ===
+          'processed',
+      ).length;
+
+    const duplicate =
+      results.filter(
+        (
+          result,
+        ): boolean =>
+          result.status ===
+          'duplicate',
+      ).length;
+
+    const error =
+      results.filter(
+        (
+          result,
+        ): boolean =>
+          result.status ===
+          'error',
+      ).length;
 
     SpreadsheetApp
       .getUi()
       .alert(
-        'AI評価が完了しました。',
+        [
+          '履歴書取込が完了しました。',
+          '',
+          `成功: ${processed}`,
+          `重複: ${duplicate}`,
+          `エラー: ${error}`,
+        ].join(
+          '\n',
+        ),
       );
-  } catch (error: unknown) {
-    handleError(error);
+  } finally {
+    lock.releaseLock();
   }
 }
 
-// ========================================
-// Composition Root
-// ========================================
-
-/**
- * アプリケーションで利用する
- * 各クラスの依存関係を生成・接続する。
- *
- * Google固有APIへの依存は
- * Infrastructure層へ閉じ込める。
- */
-function createApplicationContext():
-  ApplicationContext {
-
-  const scriptProperties =
-    PropertiesService
-      .getScriptProperties();
-
-  // ----------------------------------------
-  // Configuration
-  // ----------------------------------------
-
-  const spreadsheetId =
-    scriptProperties.getProperty(
-      PROP_SOURCE_SPREADSHEET_ID,
-    );
-
-  if (!spreadsheetId) {
-    throw new Error(
-      '採用管理Spreadsheet IDが設定されていません。',
-    );
-  }
-
-  const apiKey =
-    scriptProperties.getProperty(
-      PROP_GEMINI_API_KEY,
-    );
-
-  if (!apiKey) {
-    throw new Error(
-      'Gemini APIキーが設定されていません。',
-    );
-  }
-
-  // ----------------------------------------
-  // Security
-  // ----------------------------------------
-
-  const identityProvider =
-    new GasUserIdentityProvider();
-
-  const permissionRepository =
-    new ScriptPropertiesPermissionRepository(
-      PROP_ADMIN_EMAIL,
-      PROP_EVALUATOR_EMAILS,
-    );
-
-  const authorization =
-    new AuthorizationService(
-      identityProvider,
-      permissionRepository,
-    );
-
-  const aiDataPolicy =
-    new AiDataPolicy();
-
-  const spreadsheetSanitizer =
-    new SpreadsheetSanitizer();
-
-  // ----------------------------------------
-  // Repository
-  // ----------------------------------------
-
-  const candidateRepository =
-    new GasCandidateRepository(
-      spreadsheetId,
-      CANDIDATE_SHEET_NAME,
-    );
-
-  const criteriaRepository =
-    new GasCriteriaRepository(
-      spreadsheetId,
-      CRITERIA_SHEET_NAME,
-    );
-
-  const historyRepository =
-    new GasEvaluationHistoryRepository(
-      spreadsheetId,
-      HISTORY_SHEET_NAME,
-    );
-
-  // ----------------------------------------
-  // External AI
-  // ----------------------------------------
-
-  const geminiClient =
-    new GasGeminiClient(
-      apiKey,
-    );
-
-  // ----------------------------------------
-  // Application
-  // ----------------------------------------
-
-  const evaluationService =
-    new EvaluationService(
-      authorization,
-      candidateRepository,
-      criteriaRepository,
-      aiDataPolicy,
-      geminiClient,
-      historyRepository,
-    );
-
-  // ----------------------------------------
-  // Spreadsheet Adapter
-  // ----------------------------------------
-
-  const inputReader =
-    new SpreadsheetEvaluationInputReader(
-      spreadsheetId,
-      EVALUATION_UI_SHEET_NAME,
-    );
-
-  const resultWriter =
-    new SpreadsheetEvaluationResultWriter(
-      spreadsheetId,
-      EVALUATION_UI_SHEET_NAME,
-      spreadsheetSanitizer,
-    );
-
-  return {
-    evaluationService,
-    inputReader,
-    resultWriter,
-  };
+export function setupTrigger(): void {
+  createResumeCommonServices()
+    .setup
+    .setupImportTrigger();
 }
 
-// ========================================
-// Error Handling
-// ========================================
+export function setupRetentionPolicy(): void {
+  createResumeCommonServices()
+    .setup
+    .setupRetentionPolicy();
+}
 
-function handleError(
-  error: unknown,
-): void {
-  const message =
-    error instanceof Error
-      ? error.message
-      : '予期しないエラーが発生しました。';
+export function purgeExpiredCandidates(): void {
+  const services =
+    createResumeCommonServices();
 
-  console.error(
-    '[AI Evaluation Error]',
-    message,
+  services
+    .maintenance
+    .applyRetentionPolicy();
+
+  services.logs.access(
+    '保持期間処理',
+    '保持期間を超えた候補者データを匿名化',
   );
 
   SpreadsheetApp
     .getUi()
     .alert(
-      `AI評価を実行できませんでした。\n\n${message}`,
+      '保持期間を超えた候補者データの処理が完了しました。',
     );
+}
+
+export function applyResumeRetentionPolicy(): void {
+  createResumeCommonServices()
+    .maintenance
+    .applyRetentionPolicy();
+}
+
+export function setupRetentionTrigger(): void {
+  createResumeCommonServices()
+    .setup
+    .setupRetentionTrigger();
+}
+
+export function setupAdminEditors(): void {
+  createResumeCommonServices()
+    .setup
+    .setupAdminEditors();
+}
+
+export function rebuildApplicantListSheet(): void {
+  const services =
+    createResumeCommonServices();
+
+  services
+    .candidates
+    .rebuildApplicantList();
+
+  services.logs.access(
+    '操作実行',
+    '応募者一覧シートを作成/更新',
+  );
+
+  SpreadsheetApp
+    .getUi()
+    .alert(
+      `「${ResumeConfig.applicantListSheetName}」シートを更新しました。`,
+    );
+}
+
+export function initAccessLogSheet(): void {
+  createResumeCommonServices()
+    .setup
+    .initializeAccessLogSheet();
+}
+
+export function setupLogAdminEditors(): void {
+  createResumeCommonServices()
+    .setup
+    .setupLogAdminEditors();
+}
+
+export function initErrorLogSheet(): void {
+  createResumeCommonServices()
+    .setup
+    .initializeErrorLogSheet();
+}
+
+export function removeAllTriggers(): void {
+  createResumeCommonServices()
+    .setup
+    .removeAllTriggers();
+}
+
+export function setupAiEvaluationSheet(): void {
+  aiEvaluationService
+    .setupAiEvaluationSheet();
+}
+
+export function showCurrentApplicantDetail(): void {
+  aiEvaluationService
+    .showCurrentApplicantDetail();
+}
+
+export function restoreLatestEvaluation(): void {
+  aiEvaluationService
+    .restoreLatestEvaluation();
+}
+
+export function evaluateCurrentApplicant(): void {
+  aiEvaluationService
+    .evaluateCurrentApplicant();
+}
+
+export function compareCurrentApplicantAcrossDepartments(): void {
+  aiEvaluationService
+    .compareCurrentApplicantAcrossDepartments();
+}
+
+export function recreateAiEvaluationSheet(): void {
+  aiEvaluationService
+    .recreateAiEvaluationSheet();
+}
+
+export function initializeAiSecurity(): void {
+  aiEvaluationService
+    .initializeAiSecurity();
+}
+
+export function setupGeminiApiKey(): void {
+  aiEvaluationService
+    .setupGeminiApiKey();
+}
+
+export function setupSourceSpreadsheet(): void {
+  aiEvaluationService
+    .setupSourceSpreadsheet();
+}
+
+export function setupAiEvaluatorEmails(): void {
+  aiEvaluationService
+    .setupAiEvaluatorEmails();
+}
+
+export function setupCriteriaMaster(): void {
+  aiEvaluationService
+    .setupCriteriaMaster();
+}
+
+function createResumeImportMenu(): void {
+  SpreadsheetApp
+    .getUi()
+    .createMenu(
+      '履歴書取込',
+    )
+    .addItem(
+      '① Gemini APIキーを設定',
+      'setupApiKey',
+    )
+    .addItem(
+      '② アップロード用Driveフォルダを準備',
+      'setupFolders',
+    )
+    .addSeparator()
+    .addItem(
+      '③ 履歴書を取り込む（今すぐ実行）',
+      'importResumes',
+    )
+    .addSeparator()
+    .addItem(
+      '④ 自動取込トリガーを設定（10分ごと）',
+      'setupTrigger',
+    )
+    .addSeparator()
+    .addItem(
+      '⑤ データ保持期間を設定',
+      'setupRetentionPolicy',
+    )
+    .addItem(
+      '保持期間を超えたデータを今すぐ削除',
+      'purgeExpiredCandidates',
+    )
+    .addItem(
+      '保持期間チェックの自動実行を設定（毎日）',
+      'setupRetentionTrigger',
+    )
+    .addSeparator()
+    .addItem(
+      '⑥ 個人情報列の編集を管理者のみに制限',
+      'setupAdminEditors',
+    )
+    .addSeparator()
+    .addItem(
+      '⑦ 応募者一覧シートを作成/更新',
+      'rebuildApplicantListSheet',
+    )
+    .addItem(
+      '⑧ アクセスログシートを作成',
+      'initAccessLogSheet',
+    )
+    .addItem(
+      '⑨ アクセスログの編集を管理者のみに制限',
+      'setupLogAdminEditors',
+    )
+    .addItem(
+      '⑩ エラーログシートを作成',
+      'initErrorLogSheet',
+    )
+    .addSeparator()
+    .addItem(
+      'すべての自動実行トリガーを解除',
+      'removeAllTriggers',
+    )
+    .addToUi();
+}
+
+function createAiEvaluationMenu(): void {
+  const ui =
+    SpreadsheetApp.getUi();
+
+  ui
+    .createMenu(
+      'AI評価',
+    )
+    .addItem(
+      '応募者・部門一覧を更新',
+      'setupAiEvaluationSheet',
+    )
+    .addItem(
+      '選択中の応募者詳細を表示',
+      'showCurrentApplicantDetail',
+    )
+    .addItem(
+      '最新の評価結果を復元',
+      'restoreLatestEvaluation',
+    )
+    .addItem(
+      '選択部門でAI評価',
+      'evaluateCurrentApplicant',
+    )
+    .addItem(
+      '全部門で比較',
+      'compareCurrentApplicantAcrossDepartments',
+    )
+    .addSeparator()
+    .addSubMenu(
+      ui
+        .createMenu(
+          '保守',
+        )
+        .addItem(
+          'AI評価画面を再作成',
+          'recreateAiEvaluationSheet',
+        ),
+    )
+    .addSubMenu(
+      ui
+        .createMenu(
+          '初期設定',
+        )
+        .addItem(
+          '管理者を初期化',
+          'initializeAiSecurity',
+        )
+        .addItem(
+          'Gemini APIキー設定',
+          'setupGeminiApiKey',
+        )
+        .addItem(
+          '採用管理Spreadsheet設定',
+          'setupSourceSpreadsheet',
+        )
+        .addItem(
+          'AI評価実行ユーザー設定',
+          'setupAiEvaluatorEmails',
+        )
+        .addItem(
+          '評価基準マスタ作成',
+          'setupCriteriaMaster',
+        ),
+    )
+    .addToUi();
+}
+
+function initializeResumeSession(): void {
+  const spreadsheet =
+    SpreadsheetApp
+      .getActiveSpreadsheet();
+
+  const activeSheet =
+    spreadsheet
+      .getActiveSheet();
+
+  const sheetName =
+    activeSheet
+      ? activeSheet.getName()
+      : '';
+
+  PropertiesService
+    .getUserProperties()
+    .setProperty(
+      'LAST_VIEWED_SHEET',
+      sheetName,
+    );
+
+  try {
+    const services =
+      createResumeCommonServices();
+
+    services.logs.access(
+      'シートを開いた',
+      (
+        sheetName
+          ? `開いたときのタブ: ${sheetName}`
+          : '（タブ名を取得できませんでした）'
+      ) +
+        ` / version ${ResumeConfig.systemVersion}`,
+    );
+  } catch (
+    error: unknown
+  ) {
+    console.error(
+      'onOpenアクセスログに失敗しました。',
+      error,
+    );
+  }
+}
+
+function createResumeCommonServices():
+  ResumeCommonServices {
+  const spreadsheetId =
+    SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getId();
+
+  const logs =
+    new GasImportLogRepository(
+      spreadsheetId,
+    );
+
+  const maintenance =
+    new ResumeMaintenanceService(
+      spreadsheetId,
+    );
+
+  const setup =
+    new ResumeSetupService(
+      spreadsheetId,
+      maintenance,
+      logs,
+    );
+
+  const candidates =
+    new GasResumeCandidateRepository(
+      spreadsheetId,
+    );
+
+  return {
+    logs,
+    maintenance,
+    setup,
+    candidates,
+  };
+}
+
+function createResumeImportService():
+  ResumeImportService {
+  const properties =
+    PropertiesService
+      .getScriptProperties();
+
+  const services =
+    createResumeCommonServices();
+
+  const apiKey =
+    requireResumeProperty(
+      properties,
+      ResumeConfig
+        .properties
+        .geminiApiKey,
+      'Gemini APIキー',
+    );
+
+  const inboxFolderId =
+    requireResumeProperty(
+      properties,
+      ResumeConfig
+        .properties
+        .inboxFolderId,
+      '履歴書アップロードフォルダ',
+    );
+
+  const processedFolderId =
+    requireResumeProperty(
+      properties,
+      ResumeConfig
+        .properties
+        .processedFolderId,
+      '処理済みフォルダ',
+    );
+
+  const duplicateFolderId =
+    requireResumeProperty(
+      properties,
+      ResumeConfig
+        .properties
+        .duplicateFolderId,
+      '重複フォルダ',
+    );
+
+  const errorFolderId =
+    requireResumeProperty(
+      properties,
+      ResumeConfig
+        .properties
+        .errorFolderId,
+      '処理エラーフォルダ',
+    );
+
+  const sourceRepository =
+    new GasDriveResumeRepository(
+      inboxFolderId,
+      processedFolderId,
+      duplicateFolderId,
+      errorFolderId,
+    );
+
+  const extractionClient =
+    new GasResumeGeminiClient(
+      apiKey,
+    );
+
+  return new ResumeImportService(
+    sourceRepository,
+    services.candidates,
+    extractionClient,
+    services.logs,
+    {
+      maxFilesPerRun:
+        ResumeConfig
+          .limits
+          .maxFilesPerRun,
+
+      maxResumeTextLength:
+        ResumeConfig
+          .limits
+          .maxResumeTextLength,
+
+      maxTotalTextLengthPerRun:
+        ResumeConfig
+          .limits
+          .maxTotalTextLengthPerRun,
+    },
+  );
+}
+
+function requireResumeProperty(
+  properties:
+    GoogleAppsScript
+      .Properties
+      .Properties,
+  key: string,
+  label: string,
+): string {
+  const value =
+    String(
+      properties.getProperty(
+        key,
+      ) ?? '',
+    ).trim();
+
+  if (!value) {
+    throw new Error(
+      `${label}が設定されていません。`,
+    );
+  }
+
+  return value;
 }

@@ -26,17 +26,23 @@ export class SpreadsheetEvaluationInputReader {
       );
     }
 
-    const candidateKey = String(
-      sheet.getRange('B2').getValue() ?? '',
-    ).trim();
+    const candidateKey =
+      String(
+        sheet
+          .getRange('C2')
+          .getValue() ?? '',
+      ).trim();
 
-    const departmentId = String(
-      sheet.getRange('B3').getValue() ?? '',
-    ).trim();
+    const departmentId =
+      String(
+        sheet
+          .getRange('B3')
+          .getValue() ?? '',
+      ).trim();
 
     if (!candidateKey) {
       throw new Error(
-        '応募者を選択してください。',
+        '応募者の内部識別子を取得できません。',
       );
     }
 
