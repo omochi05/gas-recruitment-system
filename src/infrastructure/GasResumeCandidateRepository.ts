@@ -275,6 +275,9 @@ export class GasResumeCandidateRepository
             .applicantListSheetName,
         );
 
+    const isNewSheet =
+      !targetSheet;
+
     if (
       !targetSheet
     ) {
@@ -285,8 +288,6 @@ export class GasResumeCandidateRepository
               .applicantListSheetName,
           );
     }
-
-    targetSheet.clear();
 
     const headers =
       this.getHeaders(
@@ -299,6 +300,30 @@ export class GasResumeCandidateRepository
       throw new Error(
         '面接官シートのヘッダーがありません。',
       );
+    }
+
+    /*
+     * UI・書式・列幅を維持するため、
+     * clear() は使わず内容だけを更新する。
+     */
+    const lastRow =
+      targetSheet.getLastRow();
+
+    const lastColumn =
+      targetSheet.getLastColumn();
+
+    if (
+      lastRow > 0 &&
+      lastColumn > 0
+    ) {
+      targetSheet
+        .getRange(
+          1,
+          1,
+          lastRow,
+          lastColumn,
+        )
+        .clearContent();
     }
 
     const formula =
@@ -353,9 +378,17 @@ export class GasResumeCandidateRepository
         );
     }
 
-    this.formatApplicantList(
-      targetSheet,
-    );
+    /*
+     * 初回作成時のみ列幅などを自動調整する。
+     * 既存シートでは利用者が調整したUIを維持する。
+     */
+    if (
+      isNewSheet
+    ) {
+      this.formatApplicantList(
+        targetSheet,
+      );
+    }
 
     this.protectApplicantList(
       targetSheet,

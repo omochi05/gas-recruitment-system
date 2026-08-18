@@ -45,6 +45,11 @@ interface SelectionChangeEvent {
       .Range;
 }
 
+interface SpreadsheetUiState {
+  sheetName: string;
+  activeRangeA1: string;
+}
+
 interface ResumeCommonServices {
   logs:
     GasImportLogRepository;
@@ -252,6 +257,9 @@ export function setupFolders(): void {
 }
 
 export function importResumes(): void {
+  const uiState =
+    captureSpreadsheetUiState();
+
   const importService =
     createResumeImportService();
 
@@ -296,6 +304,26 @@ export function importResumes(): void {
           'error',
       );
 
+    if (
+      processed.length > 0
+    ) {
+      const services =
+        createResumeCommonServices();
+
+      services
+        .candidates
+        .rebuildApplicantList();
+
+      services.logs.access(
+        '操作実行',
+        '履歴書取込後に応募者一覧シートを自動更新',
+      );
+    }
+
+    restoreSpreadsheetUiState(
+      uiState,
+    );
+
     const lines = [
       '履歴書取込が完了しました。',
       '',
@@ -332,6 +360,10 @@ export function importResumes(): void {
         lines.join('\n'),
       );
   } finally {
+    restoreSpreadsheetUiState(
+      uiState,
+    );
+
     lock.releaseLock();
   }
 }
@@ -387,23 +419,32 @@ export function setupAdminEditors(): void {
 }
 
 export function rebuildApplicantListSheet(): void {
-  const services =
-    createResumeCommonServices();
+  const uiState =
+    captureSpreadsheetUiState();
 
-  services
-    .candidates
-    .rebuildApplicantList();
+  try {
+    const services =
+      createResumeCommonServices();
 
-  services.logs.access(
-    '操作実行',
-    '応募者一覧シートを作成/更新',
-  );
+    services
+      .candidates
+      .rebuildApplicantList();
 
-  SpreadsheetApp
-    .getUi()
-    .alert(
-      `「${ResumeConfig.applicantListSheetName}」シートを更新しました。`,
+    services.logs.access(
+      '操作実行',
+      '応募者一覧シートを作成/更新',
     );
+
+    SpreadsheetApp
+      .getUi()
+      .alert(
+        `「${ResumeConfig.applicantListSheetName}」シートを更新しました。`,
+      );
+  } finally {
+    restoreSpreadsheetUiState(
+      uiState,
+    );
+  }
 }
 
 export function initAccessLogSheet(): void {
@@ -830,6 +871,72 @@ function requireResumeProperty(
   }
 
   return value;
+}
+
+
+function captureSpreadsheetUiState():
+  SpreadsheetUiState {
+  const spreadsheet =
+    SpreadsheetApp
+      .getActiveSpreadsheet();
+
+  const activeSheet =
+    spreadsheet
+      .getActiveSheet();
+
+  const activeRange =
+    activeSheet
+      .getActiveRange();
+
+  return {
+    sheetName:
+      activeSheet.getName(),
+
+    activeRangeA1:
+      activeRange
+        ? activeRange
+            .getA1Notation()
+        : 'A1',
+  };
+}
+
+function restoreSpreadsheetUiState(
+  state:
+    SpreadsheetUiState,
+): void {
+  try {
+    const spreadsheet =
+      SpreadsheetApp
+        .getActiveSpreadsheet();
+
+    const sheet =
+      spreadsheet
+        .getSheetByName(
+          state.sheetName,
+        );
+
+    if (!sheet) {
+      return;
+    }
+
+    spreadsheet
+      .setActiveSheet(
+        sheet,
+      );
+
+    sheet
+      .getRange(
+        state.activeRangeA1,
+      )
+      .activate();
+  } catch (
+    error: unknown
+  ) {
+    console.error(
+      'UI状態の復元に失敗しました。',
+      error,
+    );
+  }
 }
 
 function writeSimpleTriggerAccessLog(

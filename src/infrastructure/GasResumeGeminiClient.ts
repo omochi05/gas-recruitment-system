@@ -273,7 +273,6 @@ export class GasResumeGeminiClient
               'Gemini API接続エラー',
               `model=${model}`,
               `attempt=${attempt}/${maxAttemptsPerModel}`,
-              lastErrorMessage,
             ].join(
               ' / ',
             ),
@@ -374,7 +373,6 @@ export class GasResumeGeminiClient
               'Geminiモデル利用不可',
               `HTTP=${status}`,
               `model=${model}`,
-              lastErrorMessage,
             ].join(
               ' / ',
             ),
@@ -392,12 +390,12 @@ export class GasResumeGeminiClient
           status === 403
         ) {
           throw new Error(
-            `Gemini API認証エラー HTTP ${status}: ${lastErrorMessage}`,
+            `Gemini API認証エラー HTTP ${status}`,
           );
         }
 
         throw new Error(
-          `Gemini APIエラー HTTP ${status}: ${lastErrorMessage}`,
+          `Gemini APIエラー HTTP ${status}`,
         );
       }
 
@@ -427,17 +425,7 @@ export class GasResumeGeminiClient
             ', ',
           )}`,
           `最終HTTP: ${status}`,
-          lastErrorMessage
-            ? `詳細: ${lastErrorMessage}`
-            : '',
-        ]
-          .filter(
-            (
-              value: string,
-            ): boolean =>
-              value !== '',
-          )
-          .join(
+         ].join(
             ' ',
           ),
       );
@@ -483,8 +471,7 @@ export class GasResumeGeminiClient
       error: unknown
     ) {
       console.error(
-        'Gemini履歴書解析JSON:',
-        cleaned,
+        'Gemini履歴書解析結果のJSON解析に失敗しました。',
       );
 
       throw new Error(
