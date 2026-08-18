@@ -115,10 +115,7 @@ export function onSelectionChange(
       return;
     }
 
-    const services =
-      createResumeCommonServices();
-
-    services.logs.access(
+    writeSimpleTriggerAccessLog(
       'シート選択',
       `シート「${sheetName}」に切り替え`,
     );
@@ -155,9 +152,6 @@ export function onEdit(
     ) {
       return;
     }
-
-    const services =
-      createResumeCommonServices();
 
     const lastColumn =
       sheet.getLastColumn();
@@ -203,10 +197,8 @@ export function onEdit(
       `セル ${e.range.getA1Notation()} / 列: ${columnName}`;
 
     if (
-      e.range.getNumRows() ===
-        1 &&
-      e.range.getNumColumns() ===
-        1 &&
+      e.range.getNumRows() === 1 &&
+      e.range.getNumColumns() === 1 &&
       safeValueColumns.has(
         columnName,
       )
@@ -217,7 +209,7 @@ export function onEdit(
         )}`;
     }
 
-    services.logs.access(
+    writeSimpleTriggerAccessLog(
       '面接官シート編集',
       detail,
     );
@@ -269,43 +261,59 @@ export function importResumes(): void {
 
     const processed =
       results.filter(
-        (
-          result,
-        ): boolean =>
+        (result): boolean =>
           result.status ===
           'processed',
-      ).length;
+      );
 
     const duplicate =
       results.filter(
-        (
-          result,
-        ): boolean =>
+        (result): boolean =>
           result.status ===
           'duplicate',
-      ).length;
+      );
 
-    const error =
+    const errors =
       results.filter(
-        (
-          result,
-        ): boolean =>
+        (result): boolean =>
           result.status ===
           'error',
-      ).length;
+      );
+
+    const lines = [
+      '履歴書取込が完了しました。',
+      '',
+      `成功: ${processed.length}`,
+      `重複: ${duplicate.length}`,
+      `エラー: ${errors.length}`,
+    ];
+
+    if (
+      errors.length > 0
+    ) {
+      lines.push(
+        '',
+        '--- エラー詳細 ---',
+      );
+
+      errors.forEach(
+        (
+          result,
+          index,
+        ): void => {
+          lines.push(
+            `${index + 1}. ${result.fileName}`,
+            result.message ??
+              '詳細不明',
+          );
+        },
+      );
+    }
 
     SpreadsheetApp
       .getUi()
       .alert(
-        [
-          '履歴書取込が完了しました。',
-          '',
-          `成功: ${processed}`,
-          `重複: ${duplicate}`,
-          `エラー: ${error}`,
-        ].join(
-          '\n',
-        ),
+        lines.join('\n'),
       );
   } finally {
     lock.releaseLock();
@@ -790,4 +798,40 @@ function requireResumeProperty(
   }
 
   return value;
+}
+
+function writeSimpleTriggerAccessLog(
+  actionType: string,
+  detail: string,
+): void {
+  try {
+    const spreadsheet =
+      SpreadsheetApp
+        .getActiveSpreadsheet();
+
+    const sheet =
+      spreadsheet
+        .getSheetByName(
+          ResumeConfig
+            .accessLogSheetName,
+        );
+
+    if (!sheet) {
+      return;
+    }
+
+    sheet.appendRow([
+      new Date(),
+      '(simple trigger)',
+      actionType,
+      detail,
+    ]);
+  } catch (
+    error: unknown
+  ) {
+    console.error(
+      'simple triggerアクセスログの記録に失敗しました。',
+      error,
+    );
+  }
 }

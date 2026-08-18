@@ -15,7 +15,9 @@ import type {
 
 export interface ResumeImportLimits {
   maxFilesPerRun: number;
+
   maxResumeTextLength: number;
+
   maxTotalTextLengthPerRun: number;
 }
 
@@ -38,18 +40,45 @@ export class ResumeImportService {
   ) {}
 
   execute(): ImportResult[] {
-    const files =
-      this.sources.findPending(
-        this.limits.maxFilesPerRun,
-      );
+    const fileIds =
+      this.sources
+        .findPendingFileIds(
+          this.limits
+            .maxFilesPerRun,
+        );
 
     const results:
       ImportResult[] = [];
 
     let totalTextLength = 0;
 
-    for (const source of files) {
+    for (
+      const fileId
+      of fileIds
+    ) {
+      let source:
+        ResumeSource |
+        null = null;
+
+      let fileName =
+        fileId;
+
       try {
+        /*
+         * ここで初めてTXT読込・PDF OCRを行う。
+         *
+         * そのため1ファイルが壊れていても
+         * バッチ全体には影響しない。
+         */
+        source =
+          this.sources
+            .getSource(
+              fileId,
+            );
+
+        fileName =
+          source.fileName;
+
         const textLength =
           this.getSourceLength(
             source,
@@ -57,7 +86,8 @@ export class ResumeImportService {
 
         if (
           textLength >
-          this.limits.maxResumeTextLength
+          this.limits
+            .maxResumeTextLength
         ) {
           throw new Error(
             `抽出テキストが上限${this.limits.maxResumeTextLength}文字を超えています。`,
@@ -67,35 +97,31 @@ export class ResumeImportService {
         if (
           totalTextLength +
             textLength >
-          this.limits.maxTotalTextLengthPerRun
+          this.limits
+            .maxTotalTextLengthPerRun
         ) {
           throw new Error(
             `1回の実行でAIへ送信できる総文字数${this.limits.maxTotalTextLengthPerRun}文字を超えます。`,
           );
         }
 
-        totalTextLength +=
-          textLength;
-
         const candidate =
           this.extractor.extract(
             source,
           );
 
-        if (
-          this.candidates.isDuplicate(
-            candidate,
-          )
-        ) {
-          this.candidates.save(
-            candidate,
-            '重複',
-            '既存候補者と氏名・連絡先が一致',
-          );
+        totalTextLength +=
+          textLength;
 
+        if (
+          this.candidates
+            .isDuplicate(
+              candidate,
+            )
+        ) {
           this.sources
             .moveToDuplicate(
-              source.fileId,
+              fileId,
             );
 
           this.logs.access(
@@ -104,8 +130,7 @@ export class ResumeImportService {
           );
 
           results.push({
-            fileId:
-              source.fileId,
+            fileId,
 
             fileName:
               source.fileName,
@@ -125,7 +150,7 @@ export class ResumeImportService {
 
         this.sources
           .moveToProcessed(
-            source.fileId,
+            fileId,
           );
 
         this.logs.access(
@@ -134,8 +159,7 @@ export class ResumeImportService {
         );
 
         results.push({
-          fileId:
-            source.fileId,
+          fileId,
 
           fileName:
             source.fileName,
@@ -149,32 +173,66 @@ export class ResumeImportService {
         const message =
           error instanceof Error
             ? error.message
-            : String(error);
+            : String(
+                error,
+              );
 
-        try {
-          this.candidates
-            .saveError(
-              source,
-              message,
-            );
-        } catch (
-          saveError: unknown
+        console.error(
+          [
+            '[ResumeImportService]',
+            `fileId=${fileId}`,
+            `fileName=${fileName}`,
+            message,
+          ].join(
+            ' / ',
+          ),
+        );
+
+        /*
+         * ResumeSource生成後のエラーであれば
+         * Repositoryへ情報を渡す。
+         *
+         * getSource()自体が失敗した場合は
+         * ResumeSourceが存在しないので
+         * saveError()は呼ばない。
+         */
+        if (
+          source
         ) {
-          console.error(
-            'エラー行の保存に失敗しました。',
-            saveError,
-          );
+          try {
+            this.candidates
+              .saveError(
+                source,
+                message,
+              );
+          } catch (
+            saveError: unknown
+          ) {
+            console.error(
+              'エラー情報の記録に失敗しました。',
+              saveError,
+            );
+          }
         }
 
-        this.logs.error(
-          source.fileName,
-          message,
-        );
+        try {
+          this.logs.error(
+            fileName,
+            message,
+          );
+        } catch (
+          logError: unknown
+        ) {
+          console.error(
+            'エラーログの記録に失敗しました。',
+            logError,
+          );
+        }
 
         try {
           this.sources
             .moveToError(
-              source.fileId,
+              fileId,
             );
         } catch (
           moveError: unknown
@@ -186,30 +244,39 @@ export class ResumeImportService {
         }
 
         results.push({
-          fileId:
-            source.fileId,
+          fileId,
 
-          fileName:
-            source.fileName,
+          fileName,
 
           status:
             'error',
 
           message,
         });
+
+        /*
+         * 重要:
+         * このファイルだけ失敗させ、
+         * 次の履歴書へ進む。
+         */
+        continue;
       }
     }
 
-    try {
-      this.candidates
-        .rebuildApplicantList();
-    } catch (
-      error: unknown
+    if (
+      results.length > 0
     ) {
-      console.error(
-        '応募者一覧の更新に失敗しました。',
-        error,
-      );
+      try {
+        this.candidates
+          .rebuildApplicantList();
+      } catch (
+        error: unknown
+      ) {
+        console.error(
+          '応募者一覧の更新に失敗しました。',
+          error,
+        );
+      }
     }
 
     return results;
@@ -218,11 +285,15 @@ export class ResumeImportService {
   private getSourceLength(
     source: ResumeSource,
   ): number {
-    if (source.text) {
+    if (
+      source.text
+    ) {
       return source.text.length;
     }
 
-    if (source.base64) {
+    if (
+      source.base64
+    ) {
       return source.base64.length;
     }
 
