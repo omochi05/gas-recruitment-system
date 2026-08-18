@@ -3,6 +3,10 @@ import {
 } from '../application/ResumeImportService';
 
 import {
+  formatAllSheets,
+} from '../ui/SpreadsheetView';
+
+import {
   ResumeMaintenanceService,
 } from '../application/ResumeMaintenanceService';
 
@@ -64,6 +68,18 @@ export function onOpen(): void {
   createResumeImportMenu();
 
   createAiEvaluationMenu();
+
+  createUiMenu();
+}
+
+export function formatAllUiSheets(): void {
+  formatAllSheets();
+
+  SpreadsheetApp
+    .getUi()
+    .alert(
+      '全シートの表示を整えました。',
+    );
 }
 
 export function onSelectionChange(
@@ -604,6 +620,19 @@ function createAiEvaluationMenu(): void {
     .addToUi();
 }
 
+function createUiMenu(): void {
+  SpreadsheetApp
+    .getUi()
+    .createMenu(
+      '表示設定',
+    )
+    .addItem(
+      '全シートの表示を整える',
+      'formatAllUiSheets',
+    )
+    .addToUi();
+}
+
 function initializeResumeSession(): void {
   const spreadsheet =
     SpreadsheetApp
@@ -786,12 +815,15 @@ function requireResumeProperty(
 ): string {
   const value =
     String(
-      properties.getProperty(
-        key,
-      ) ?? '',
+      properties
+        .getProperty(
+          key,
+        ) ?? '',
     ).trim();
 
-  if (!value) {
+  if (
+    !value
+  ) {
     throw new Error(
       `${label}が設定されていません。`,
     );
@@ -816,7 +848,9 @@ function writeSimpleTriggerAccessLog(
             .accessLogSheetName,
         );
 
-    if (!sheet) {
+    if (
+      !sheet
+    ) {
       return;
     }
 

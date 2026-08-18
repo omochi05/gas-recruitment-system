@@ -24,6 +24,7 @@ var GasApp = (() => {
     applyResumeRetentionPolicy: () => applyResumeRetentionPolicy,
     compareCurrentApplicantAcrossDepartments: () => compareCurrentApplicantAcrossDepartments,
     evaluateCurrentApplicant: () => evaluateCurrentApplicant,
+    formatAllUiSheets: () => formatAllUiSheets,
     importResumes: () => importResumes,
     initAccessLogSheet: () => initAccessLogSheet,
     initErrorLogSheet: () => initErrorLogSheet,
@@ -204,6 +205,1168 @@ var GasApp = (() => {
       return 0;
     }
   };
+
+  // src/ui/SpreadsheetView.ts
+  function formatAllSheets() {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheets = [
+      "\u8A55\u4FA1\u57FA\u6E96",
+      "\u30A2\u30AF\u30BB\u30B9\u30ED\u30B0",
+      "\u9762\u63A5\u5B98\u30B7\u30FC\u30C8",
+      "AI\u8A55\u4FA1",
+      "\u90E8\u9580\u6BD4\u8F03",
+      "AI\u8A55\u4FA1\u5C65\u6B74",
+      "\u30A8\u30E9\u30FC\u30ED\u30B0",
+      "\u5FDC\u52DF\u8005\u4E00\u89A7"
+    ];
+    for (const sheetName of sheets) {
+      const sheet = spreadsheet.getSheetByName(
+        sheetName
+      );
+      if (!sheet) {
+        continue;
+      }
+      switch (sheetName) {
+        case "\u8A55\u4FA1\u57FA\u6E96":
+          formatCriteriaSheet(
+            sheet
+          );
+          break;
+        case "\u30A2\u30AF\u30BB\u30B9\u30ED\u30B0":
+          formatAccessLogSheet(
+            sheet
+          );
+          break;
+        case "\u9762\u63A5\u5B98\u30B7\u30FC\u30C8":
+          formatInterviewerSheet(
+            sheet
+          );
+          break;
+        case "AI\u8A55\u4FA1":
+          formatAiEvaluationSheet(
+            sheet
+          );
+          break;
+        case "\u90E8\u9580\u6BD4\u8F03":
+          formatDepartmentComparisonSheet(
+            sheet
+          );
+          break;
+        case "AI\u8A55\u4FA1\u5C65\u6B74":
+          formatAiHistorySheet(
+            sheet
+          );
+          break;
+        case "\u30A8\u30E9\u30FC\u30ED\u30B0":
+          formatErrorLogSheet(
+            sheet
+          );
+          break;
+        case "\u5FDC\u52DF\u8005\u4E00\u89A7":
+          formatApplicantListSheet(
+            sheet
+          );
+          break;
+      }
+    }
+    SpreadsheetApp.flush();
+  }
+  function formatCriteriaSheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    setColumnWidths(
+      sheet,
+      [
+        120,
+        180,
+        90,
+        420
+      ]
+    );
+    wrapColumns(
+      sheet,
+      [
+        4
+      ]
+    );
+    sheet.getRange(
+      "C:C"
+    ).setHorizontalAlignment(
+      "center"
+    );
+  }
+  function formatAccessLogSheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    autoResizeWithLimits(
+      sheet,
+      100,
+      320
+    );
+    applyDateFormatByHeader(
+      sheet,
+      [
+        "\u65E5\u6642",
+        "\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7",
+        "\u5B9F\u884C\u65E5\u6642"
+      ]
+    );
+    wrapAllBody(
+      sheet
+    );
+  }
+  function formatInterviewerSheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    const headers = getHeaders(
+      sheet
+    );
+    const longHeaders = /* @__PURE__ */ new Set([
+      "\u73FE\u4F4F\u6240",
+      "\u5B66\u6B74\u30B5\u30DE\u30EA\u30FC",
+      "\u8077\u6B74\u30B5\u30DE\u30EA\u30FC",
+      "\u81EA\u5DF1PR\u8981\u7D04",
+      "\u7279\u8A18\u4E8B\u9805",
+      "\u51E6\u7406\u30E1\u30C3\u30BB\u30FC\u30B8"
+    ]);
+    const centerHeaders = /* @__PURE__ */ new Set([
+      "\u5E74\u9F62",
+      "\u6027\u5225",
+      "\u9762\u63A5\u30B9\u30C6\u30FC\u30BF\u30B9",
+      "\u51E6\u7406\u30B9\u30C6\u30FC\u30BF\u30B9"
+    ]);
+    headers.forEach(
+      (header, index) => {
+        const column = index + 1;
+        if (longHeaders.has(
+          header
+        )) {
+          sheet.setColumnWidth(
+            column,
+            280
+          );
+          sheet.getRange(
+            1,
+            column,
+            sheet.getMaxRows(),
+            1
+          ).setWrap(
+            true
+          ).setVerticalAlignment(
+            "top"
+          );
+          return;
+        }
+        sheet.autoResizeColumn(
+          column
+        );
+        limitColumnWidth(
+          sheet,
+          column,
+          90,
+          220
+        );
+        if (centerHeaders.has(
+          header
+        )) {
+          sheet.getRange(
+            2,
+            column,
+            Math.max(
+              sheet.getMaxRows() - 1,
+              1
+            ),
+            1
+          ).setHorizontalAlignment(
+            "center"
+          );
+        }
+      }
+    );
+    applyDateFormatByHeader(
+      sheet,
+      [
+        "\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7"
+      ]
+    );
+  }
+  function formatAiEvaluationSheet(sheet) {
+    sheet.setHiddenGridlines(
+      true
+    );
+    sheet.setFrozenRows(
+      3
+    );
+    sheet.getRange(
+      "A1:G1"
+    ).setBackground(
+      "#1f4e78"
+    ).setFontColor(
+      "#ffffff"
+    ).setFontWeight(
+      "bold"
+    ).setFontSize(
+      16
+    ).setHorizontalAlignment(
+      "center"
+    ).setVerticalAlignment(
+      "middle"
+    );
+    sheet.setRowHeight(
+      1,
+      42
+    );
+    sheet.getRange(
+      "A2:A3"
+    ).setBackground(
+      "#d9eaf7"
+    ).setFontWeight(
+      "bold"
+    ).setFontColor(
+      "#1f1f1f"
+    ).setVerticalAlignment(
+      "middle"
+    );
+    sheet.getRange(
+      "B2:B3"
+    ).setBackground(
+      "#ffffff"
+    ).setFontWeight(
+      "bold"
+    ).setVerticalAlignment(
+      "middle"
+    );
+    sheet.getRange(
+      "A2:B3"
+    ).setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    );
+    styleSectionHeader(
+      sheet,
+      "A5:B5",
+      "\u5FDC\u52DF\u8005\u60C5\u5831"
+    );
+    styleSectionHeader(
+      sheet,
+      "A15:C15",
+      "\u8A55\u4FA1\u57FA\u6E96"
+    );
+    styleSectionHeader(
+      sheet,
+      "A24:G24",
+      "AI\u8A55\u4FA1\u7D50\u679C"
+    );
+    sheet.getRange(
+      "A6:A13"
+    ).setBackground(
+      "#f3f6f9"
+    ).setFontWeight(
+      "bold"
+    );
+    sheet.getRange(
+      "A6:B13"
+    ).setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ).setVerticalAlignment(
+      "top"
+    );
+    sheet.getRange(
+      "A16:C22"
+    ).setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ).setVerticalAlignment(
+      "top"
+    );
+    sheet.getRange(
+      "A25:G100"
+    ).setVerticalAlignment(
+      "top"
+    ).setWrap(
+      true
+    );
+    sheet.getRange(
+      "A24:G24"
+    ).setHorizontalAlignment(
+      "center"
+    );
+    sheet.getRange(
+      "B24:D100"
+    ).setHorizontalAlignment(
+      "center"
+    );
+    setColumnWidths(
+      sheet,
+      [
+        180,
+        260,
+        100,
+        110,
+        320,
+        320,
+        320
+      ]
+    );
+    sheet.getRange(
+      "E:G"
+    ).setWrap(
+      true
+    );
+    applyAiEvaluationConditionalFormatting(
+      sheet
+    );
+    styleEvaluationSummaryArea(
+      sheet
+    );
+    try {
+      sheet.hideColumns(
+        10,
+        2
+      );
+    } catch {
+    }
+  }
+  function styleEvaluationSummaryArea(sheet) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 25) {
+      return;
+    }
+    const values = sheet.getRange(
+      25,
+      1,
+      lastRow - 24,
+      2
+    ).getValues();
+    const summaryLabels = /* @__PURE__ */ new Set([
+      "\u52A0\u91CD\u5E73\u5747",
+      "\u8A55\u4FA1\u3070\u3089\u3064\u304D",
+      "\u6839\u62E0\u5341\u5206\u5EA6\u5E73\u5747",
+      "\u8A55\u4FA1\u6E08\u307F\u4EF6\u6570",
+      "\u8A55\u4FA1\u4FDD\u7559\u4EF6\u6570",
+      "\u5F37\u307F",
+      "\u61F8\u5FF5\u70B9",
+      "\u7DCF\u8A55",
+      "\u8981\u78BA\u8A8D\u4E8B\u9805"
+    ]);
+    for (let index = 0; index < values.length; index++) {
+      const label = String(
+        values[index]?.[0] ?? ""
+      ).trim();
+      if (!summaryLabels.has(
+        label
+      )) {
+        continue;
+      }
+      const row = index + 25;
+      sheet.getRange(
+        row,
+        1,
+        1,
+        2
+      ).setBorder(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ).setVerticalAlignment(
+        "top"
+      ).setWrap(
+        true
+      );
+      sheet.getRange(
+        row,
+        1
+      ).setFontWeight(
+        "bold"
+      );
+      if (label === "\u5F37\u307F") {
+        sheet.getRange(
+          row,
+          1,
+          1,
+          2
+        ).setBackground(
+          "#e2f0d9"
+        );
+      } else if (label === "\u61F8\u5FF5\u70B9") {
+        sheet.getRange(
+          row,
+          1,
+          1,
+          2
+        ).setBackground(
+          "#fce8e6"
+        );
+      } else if (label === "\u7DCF\u8A55") {
+        sheet.getRange(
+          row,
+          1,
+          1,
+          2
+        ).setBackground(
+          "#fff2cc"
+        );
+      } else if (label === "\u8981\u78BA\u8A8D\u4E8B\u9805") {
+        sheet.getRange(
+          row,
+          1,
+          1,
+          2
+        ).setBackground(
+          "#fde9d9"
+        );
+      } else {
+        sheet.getRange(
+          row,
+          1,
+          1,
+          2
+        ).setBackground(
+          "#f3f6f9"
+        );
+      }
+    }
+  }
+  function applyAiEvaluationConditionalFormatting(sheet) {
+    const rules = sheet.getConditionalFormatRules().filter(
+      (rule) => {
+        const ranges = rule.getRanges();
+        return !ranges.some(
+          (range) => {
+            const a1 = range.getA1Notation();
+            return a1 === "B25:B100" || a1 === "C25:C100" || a1 === "D25:D100";
+          }
+        );
+      }
+    );
+    const statusRange = sheet.getRange(
+      "B25:B100"
+    );
+    const scoreRange = sheet.getRange(
+      "C25:C100"
+    );
+    const evidenceRange = sheet.getRange(
+      "D25:D100"
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(
+        "\u8A55\u4FA1\u4FDD\u7559"
+      ).setBackground(
+        "#fce8e6"
+      ).setFontColor(
+        "#b31412"
+      ).setBold(
+        true
+      ).setRanges([
+        statusRange
+      ]).build()
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThanOrEqualTo(
+        4
+      ).setBackground(
+        "#e2f0d9"
+      ).setFontColor(
+        "#274e13"
+      ).setBold(
+        true
+      ).setRanges([
+        scoreRange
+      ]).build()
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenNumberLessThanOrEqualTo(
+        2
+      ).setBackground(
+        "#fce8e6"
+      ).setFontColor(
+        "#b31412"
+      ).setBold(
+        true
+      ).setRanges([
+        scoreRange
+      ]).build()
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenNumberLessThanOrEqualTo(
+        2
+      ).setBackground(
+        "#fff2cc"
+      ).setFontColor(
+        "#7f6000"
+      ).setBold(
+        true
+      ).setRanges([
+        evidenceRange
+      ]).build()
+    );
+    sheet.setConditionalFormatRules(
+      rules
+    );
+  }
+  function formatDepartmentComparisonSheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    sheet.setHiddenGridlines(
+      true
+    );
+    setColumnWidths(
+      sheet,
+      [
+        120,
+        110,
+        110,
+        130,
+        110,
+        110,
+        300,
+        300,
+        380
+      ]
+    );
+    wrapColumns(
+      sheet,
+      [
+        7,
+        8,
+        9
+      ]
+    );
+    sheet.getRange(
+      "A:A"
+    ).setFontWeight(
+      "bold"
+    );
+    sheet.getRange(
+      "B:F"
+    ).setHorizontalAlignment(
+      "center"
+    );
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      sheet.getRange(
+        2,
+        1,
+        lastRow - 1,
+        9
+      ).setBorder(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      );
+      for (let row = 2; row <= lastRow; row++) {
+        sheet.setRowHeight(
+          row,
+          72
+        );
+      }
+    }
+    applyDepartmentComparisonConditionalFormatting(
+      sheet
+    );
+  }
+  function applyDepartmentComparisonConditionalFormatting(sheet) {
+    const rules = sheet.getConditionalFormatRules();
+    const averageRange = sheet.getRange(
+      "B2:B100"
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThanOrEqualTo(
+        4
+      ).setBackground(
+        "#e2f0d9"
+      ).setBold(
+        true
+      ).setRanges([
+        averageRange
+      ]).build()
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenNumberLessThanOrEqualTo(
+        2.5
+      ).setBackground(
+        "#fce8e6"
+      ).setBold(
+        true
+      ).setRanges([
+        averageRange
+      ]).build()
+    );
+    sheet.setConditionalFormatRules(
+      rules
+    );
+  }
+  function formatAiHistorySheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    const headers = getHeaders(
+      sheet
+    );
+    headers.forEach(
+      (header, index) => {
+        const column = index + 1;
+        if (header === "\u8A55\u4FA1\u7D50\u679CJSON") {
+          sheet.setColumnWidth(
+            column,
+            420
+          );
+          sheet.getRange(
+            1,
+            column,
+            sheet.getMaxRows(),
+            1
+          ).setWrap(
+            true
+          );
+          return;
+        }
+        sheet.autoResizeColumn(
+          column
+        );
+        limitColumnWidth(
+          sheet,
+          column,
+          100,
+          240
+        );
+      }
+    );
+    applyDateFormatByHeader(
+      sheet,
+      [
+        "\u8A55\u4FA1\u65E5\u6642"
+      ]
+    );
+  }
+  function formatErrorLogSheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    autoResizeWithLimits(
+      sheet,
+      100,
+      320
+    );
+    const headers = getHeaders(
+      sheet
+    );
+    headers.forEach(
+      (header, index) => {
+        if (header.includes(
+          "\u30A8\u30E9\u30FC"
+        ) || header.includes(
+          "\u30E1\u30C3\u30BB\u30FC\u30B8"
+        ) || header.includes(
+          "\u8A73\u7D30"
+        )) {
+          const column = index + 1;
+          sheet.setColumnWidth(
+            column,
+            420
+          );
+          sheet.getRange(
+            1,
+            column,
+            sheet.getMaxRows(),
+            1
+          ).setWrap(
+            true
+          );
+        }
+      }
+    );
+    applyDateFormatByHeader(
+      sheet,
+      [
+        "\u65E5\u6642",
+        "\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7"
+      ]
+    );
+  }
+  function formatApplicantListSheet(sheet) {
+    applyTableBase(
+      sheet
+    );
+    sheet.setHiddenGridlines(
+      true
+    );
+    sheet.setFrozenRows(
+      1
+    );
+    const headers = getHeaders(
+      sheet
+    );
+    const lastRow = Math.max(
+      sheet.getLastRow(),
+      1
+    );
+    const importantWidths = {
+      \u6C0F\u540D: 150,
+      \u9762\u63A5\u30B9\u30C6\u30FC\u30BF\u30B9: 130,
+      \u30E1\u30FC\u30EB\u30A2\u30C9\u30EC\u30B9: 220,
+      \u96FB\u8A71\u756A\u53F7: 150,
+      \u6700\u7D42\u5B66\u6B74: 220,
+      \u76F4\u8FD1\u306E\u8077\u6B74: 240,
+      \u4FDD\u6709\u8CC7\u683C: 220,
+      \u81EA\u5DF1PR\u8981\u7D04: 300,
+      \u5C65\u6B74\u66F8\u30EA\u30F3\u30AF: 140,
+      \u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7: 170
+    };
+    const wrapHeaders = /* @__PURE__ */ new Set([
+      "\u6700\u7D42\u5B66\u6B74",
+      "\u76F4\u8FD1\u306E\u8077\u6B74",
+      "\u4FDD\u6709\u8CC7\u683C",
+      "\u81EA\u5DF1PR\u8981\u7D04",
+      "\u5B66\u6B74\u30B5\u30DE\u30EA\u30FC",
+      "\u8077\u6B74\u30B5\u30DE\u30EA\u30FC",
+      "\u7279\u8A18\u4E8B\u9805"
+    ]);
+    const centerHeaders = /* @__PURE__ */ new Set([
+      "\u5E74\u9F62",
+      "\u6027\u5225",
+      "\u9762\u63A5\u30B9\u30C6\u30FC\u30BF\u30B9"
+    ]);
+    headers.forEach(
+      (header, index) => {
+        const column = index + 1;
+        const configuredWidth = importantWidths[header];
+        if (configuredWidth) {
+          sheet.setColumnWidth(
+            column,
+            configuredWidth
+          );
+        } else {
+          sheet.autoResizeColumn(
+            column
+          );
+          limitColumnWidth(
+            sheet,
+            column,
+            100,
+            240
+          );
+        }
+        if (wrapHeaders.has(
+          header
+        )) {
+          sheet.getRange(
+            1,
+            column,
+            sheet.getMaxRows(),
+            1
+          ).setWrap(
+            true
+          ).setVerticalAlignment(
+            "top"
+          );
+        }
+        if (centerHeaders.has(
+          header
+        ) && lastRow > 1) {
+          sheet.getRange(
+            2,
+            column,
+            lastRow - 1,
+            1
+          ).setHorizontalAlignment(
+            "center"
+          );
+        }
+      }
+    );
+    if (headers.length > 0) {
+      sheet.getRange(
+        1,
+        1,
+        1,
+        headers.length
+      ).setBackground(
+        "#1f4e78"
+      ).setFontColor(
+        "#ffffff"
+      ).setFontWeight(
+        "bold"
+      ).setHorizontalAlignment(
+        "center"
+      ).setVerticalAlignment(
+        "middle"
+      );
+      sheet.setRowHeight(
+        1,
+        36
+      );
+    }
+    if (lastRow > 1 && headers.length > 0) {
+      const body = sheet.getRange(
+        2,
+        1,
+        lastRow - 1,
+        headers.length
+      );
+      body.setVerticalAlignment(
+        "top"
+      ).setWrap(
+        true
+      );
+      for (let row = 2; row <= lastRow; row++) {
+        sheet.setRowHeight(
+          row,
+          48
+        );
+      }
+      body.setBorder(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        "#d9e2f3",
+        SpreadsheetApp.BorderStyle.SOLID
+      );
+    }
+    const nameIndex = headers.indexOf(
+      "\u6C0F\u540D"
+    );
+    if (nameIndex >= 0 && lastRow > 1) {
+      sheet.getRange(
+        2,
+        nameIndex + 1,
+        lastRow - 1,
+        1
+      ).setFontWeight(
+        "bold"
+      ).setFontSize(
+        11
+      );
+    }
+    applyDateFormatByHeader(
+      sheet,
+      [
+        "\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7"
+      ]
+    );
+    styleApplicantStatuses(
+      sheet
+    );
+    const linkIndex = headers.indexOf(
+      "\u5C65\u6B74\u66F8\u30EA\u30F3\u30AF"
+    );
+    if (linkIndex >= 0 && lastRow > 1) {
+      sheet.getRange(
+        2,
+        linkIndex + 1,
+        lastRow - 1,
+        1
+      ).setHorizontalAlignment(
+        "center"
+      );
+    }
+    if (headers.length > 0 && !sheet.getFilter()) {
+      sheet.getRange(
+        1,
+        1,
+        Math.max(
+          lastRow,
+          2
+        ),
+        headers.length
+      ).createFilter();
+    }
+    SpreadsheetApp.flush();
+  }
+  function styleApplicantStatuses(sheet) {
+    const headers = getHeaders(
+      sheet
+    );
+    const statusIndex = headers.indexOf(
+      "\u9762\u63A5\u30B9\u30C6\u30FC\u30BF\u30B9"
+    );
+    if (statusIndex === -1) {
+      return;
+    }
+    const range = sheet.getRange(
+      2,
+      statusIndex + 1,
+      Math.max(
+        sheet.getMaxRows() - 1,
+        1
+      ),
+      1
+    );
+    const existingRules = sheet.getConditionalFormatRules().filter(
+      (rule) => !rule.getRanges().some(
+        (item) => item.getColumn() === statusIndex + 1
+      )
+    );
+    existingRules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenTextContains(
+        "\u901A\u904E"
+      ).setBackground(
+        "#e2f0d9"
+      ).setFontColor(
+        "#274e13"
+      ).setBold(
+        true
+      ).setRanges([
+        range
+      ]).build()
+    );
+    existingRules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenTextContains(
+        "\u9078\u8003\u4E2D"
+      ).setBackground(
+        "#d9eaf7"
+      ).setFontColor(
+        "#1f4e78"
+      ).setBold(
+        true
+      ).setRanges([
+        range
+      ]).build()
+    );
+    existingRules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenTextContains(
+        "\u4FDD\u7559"
+      ).setBackground(
+        "#fff2cc"
+      ).setFontColor(
+        "#7f6000"
+      ).setBold(
+        true
+      ).setRanges([
+        range
+      ]).build()
+    );
+    existingRules.push(
+      SpreadsheetApp.newConditionalFormatRule().whenTextContains(
+        "\u4E0D\u5408\u683C"
+      ).setBackground(
+        "#fce8e6"
+      ).setFontColor(
+        "#b31412"
+      ).setBold(
+        true
+      ).setRanges([
+        range
+      ]).build()
+    );
+    sheet.setConditionalFormatRules(
+      existingRules
+    );
+  }
+  function applyTableBase(sheet) {
+    const lastRow = Math.max(
+      sheet.getLastRow(),
+      1
+    );
+    const lastColumn = Math.max(
+      sheet.getLastColumn(),
+      1
+    );
+    sheet.setFrozenRows(
+      1
+    );
+    sheet.getRange(
+      1,
+      1,
+      1,
+      lastColumn
+    ).setBackground(
+      "#4a86e8"
+    ).setFontColor(
+      "#ffffff"
+    ).setFontWeight(
+      "bold"
+    ).setHorizontalAlignment(
+      "center"
+    ).setVerticalAlignment(
+      "middle"
+    ).setWrap(
+      true
+    );
+    sheet.setRowHeight(
+      1,
+      34
+    );
+    if (lastRow > 1) {
+      sheet.getRange(
+        2,
+        1,
+        lastRow - 1,
+        lastColumn
+      ).setVerticalAlignment(
+        "top"
+      );
+    }
+  }
+  function styleSectionHeader(sheet, rangeA1, title) {
+    const range = sheet.getRange(
+      rangeA1
+    );
+    const values = range.getValues();
+    if (values.length > 0 && values[0] && values[0].length > 0) {
+      values[0][0] = title;
+      range.setValues(
+        values
+      );
+    }
+    range.setBackground(
+      "#4a86e8"
+    ).setFontColor(
+      "#ffffff"
+    ).setFontWeight(
+      "bold"
+    ).setVerticalAlignment(
+      "middle"
+    );
+  }
+  function getHeaders(sheet) {
+    const lastColumn = sheet.getLastColumn();
+    if (lastColumn <= 0) {
+      return [];
+    }
+    const values = sheet.getRange(
+      1,
+      1,
+      1,
+      lastColumn
+    ).getValues()[0];
+    if (!values) {
+      return [];
+    }
+    return values.map(
+      (value) => String(
+        value ?? ""
+      ).trim()
+    );
+  }
+  function setColumnWidths(sheet, widths) {
+    widths.forEach(
+      (width, index) => {
+        sheet.setColumnWidth(
+          index + 1,
+          width
+        );
+      }
+    );
+  }
+  function wrapColumns(sheet, columns) {
+    const rows = Math.max(
+      sheet.getMaxRows(),
+      1
+    );
+    for (const column of columns) {
+      sheet.getRange(
+        1,
+        column,
+        rows,
+        1
+      ).setWrap(
+        true
+      ).setVerticalAlignment(
+        "top"
+      );
+    }
+  }
+  function wrapAllBody(sheet) {
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    if (lastRow <= 1 || lastColumn <= 0) {
+      return;
+    }
+    sheet.getRange(
+      2,
+      1,
+      lastRow - 1,
+      lastColumn
+    ).setWrap(
+      true
+    ).setVerticalAlignment(
+      "top"
+    );
+  }
+  function autoResizeWithLimits(sheet, minimum, maximum) {
+    const lastColumn = sheet.getLastColumn();
+    for (let column = 1; column <= lastColumn; column++) {
+      sheet.autoResizeColumn(
+        column
+      );
+      limitColumnWidth(
+        sheet,
+        column,
+        minimum,
+        maximum
+      );
+    }
+  }
+  function limitColumnWidth(sheet, column, minimum, maximum) {
+    const width = sheet.getColumnWidth(
+      column
+    );
+    if (width < minimum) {
+      sheet.setColumnWidth(
+        column,
+        minimum
+      );
+      return;
+    }
+    if (width > maximum) {
+      sheet.setColumnWidth(
+        column,
+        maximum
+      );
+    }
+  }
+  function applyDateFormatByHeader(sheet, headerNames) {
+    const headers = getHeaders(
+      sheet
+    );
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return;
+    }
+    for (const headerName of headerNames) {
+      const index = headers.indexOf(
+        headerName
+      );
+      if (index === -1) {
+        continue;
+      }
+      sheet.getRange(
+        2,
+        index + 1,
+        lastRow - 1,
+        1
+      ).setNumberFormat(
+        "yyyy/MM/dd HH:mm:ss"
+      );
+    }
+  }
 
   // src/gas/config.ts
   var ResumeConfig = {
@@ -1804,6 +2967,10 @@ ${email}`
         "- \u8A18\u8F09\u306E\u306A\u3044\u4E8B\u5B9F\u3092\u63A8\u6E2C\u30FB\u5275\u4F5C\u3057\u306A\u3044\u3067\u304F\u3060\u3055\u3044\u3002",
         "- \u6839\u62E0\u304C\u4E0D\u8DB3\u3057\u3066\u3044\u308B\u9805\u76EE\u306F\u300C\u8A55\u4FA1\u4FDD\u7559\u300D\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
         "- \u5E74\u9F62\u3001\u6027\u5225\u3001\u4F4F\u6240\u3001\u6C0F\u540D\u306A\u3069\u8A55\u4FA1\u306B\u4E0D\u8981\u306A\u500B\u4EBA\u5C5E\u6027\u3092\u5224\u65AD\u6750\u6599\u306B\u3057\u306A\u3044\u3067\u304F\u3060\u3055\u3044\u3002",
+        "- status\u306F\u5FC5\u305A\u300C\u8A55\u4FA1\u6E08\u307F\u300D\u307E\u305F\u306F\u300C\u8A55\u4FA1\u4FDD\u7559\u300D\u306E\u3069\u3061\u3089\u304B\u3060\u3051\u3092\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        "- 1\u301C5\u306E\u30B9\u30B3\u30A2\u3092\u4ED8\u3051\u3089\u308C\u308B\u5834\u5408\u306F\u5FC5\u305Astatus\u3092\u300C\u8A55\u4FA1\u6E08\u307F\u300D\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        "- status\u304C\u300C\u8A55\u4FA1\u4FDD\u7559\u300D\u306E\u5834\u5408\u306E\u307Fscore\u30920\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        "- status\u304C\u300C\u8A55\u4FA1\u6E08\u307F\u300D\u306E\u5834\u5408\u3001score\u306F\u5FC5\u305A1\u301C5\u306E\u6574\u6570\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
         "- \u30B9\u30B3\u30A2\u306F1\u301C5\u3067\u3059\u3002",
         "- evidenceLevel\u30821\u301C5\u3067\u3059\u3002",
         "- \u6839\u62E0\u3068\u3057\u3066\u5FDC\u52DF\u8005\u30C7\u30FC\u30BF\u306E\u3069\u306E\u5185\u5BB9\u3092\u4F7F\u7528\u3057\u305F\u304B\u3092sourceEvidence\u3078\u8A18\u8F09\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
@@ -2110,11 +3277,17 @@ ${email}`
         )
       ).map(
         (item) => {
-          const status = item.status === "\u8A55\u4FA1\u6E08\u307F" ? "\u8A55\u4FA1\u6E08\u307F" : "\u8A55\u4FA1\u4FDD\u7559";
+          const rawStatus = String(
+            item.status ?? ""
+          ).trim();
+          const scoreValue = Number(
+            item.score
+          );
+          const status = rawStatus === "\u8A55\u4FA1\u6E08\u307F" || rawStatus === "\u8A55\u4FA1\u6E08" || Number.isFinite(
+            scoreValue
+          ) && scoreValue >= 1 && scoreValue <= 5 ? "\u8A55\u4FA1\u6E08\u307F" : "\u8A55\u4FA1\u4FDD\u7559";
           const score = status === "\u8A55\u4FA1\u6E08\u307F" ? this.clamp(
-            Number(
-              item.score
-            ),
+            scoreValue,
             1,
             5
           ) : 0;
@@ -2833,27 +4006,31 @@ ${email}`
     showResult(sheet, result) {
       sheet.getRange(
         "A24:G100"
-      ).clearContent();
-      const headers = [
-        "\u8A55\u4FA1\u9805\u76EE",
-        "\u72B6\u614B",
-        "\u30B9\u30B3\u30A2",
-        "\u6839\u62E0\u5341\u5206\u5EA6",
-        "\u8A55\u4FA1\u7406\u7531",
-        "\u6839\u62E0",
-        "\u8FFD\u52A0\u8CEA\u554F"
-      ];
+      ).clearContent().clearFormat();
       sheet.getRange(
-        24,
-        1,
-        1,
-        headers.length
+        "A24:G24"
       ).setValues([
-        headers
+        [
+          "\u8A55\u4FA1\u9805\u76EE",
+          "\u72B6\u614B",
+          "\u30B9\u30B3\u30A2",
+          "\u6839\u62E0\u5341\u5206\u5EA6",
+          "\u8A55\u4FA1\u7406\u7531",
+          "\u6839\u62E0",
+          "\u8FFD\u52A0\u8CEA\u554F"
+        ]
       ]).setFontWeight(
         "bold"
+      ).setBackground(
+        "#4a86e8"
+      ).setFontColor(
+        "#ffffff"
+      ).setHorizontalAlignment(
+        "center"
+      ).setVerticalAlignment(
+        "middle"
       );
-      const rows = result.aiResult.evaluations.map(
+      const evaluationRows = result.aiResult.evaluations.map(
         (item) => [
           item.criterion,
           item.status,
@@ -2864,29 +4041,75 @@ ${email}`
           item.followUpQuestion
         ]
       );
-      if (rows.length > 0) {
+      if (evaluationRows.length > 0) {
         sheet.getRange(
           25,
           1,
-          rows.length,
+          evaluationRows.length,
           7
         ).setValues(
-          rows
+          evaluationRows
+        ).setWrap(
+          true
+        ).setVerticalAlignment(
+          "top"
+        );
+        sheet.getRange(
+          25,
+          2,
+          evaluationRows.length,
+          3
+        ).setHorizontalAlignment(
+          "center"
+        );
+        sheet.getRange(
+          25,
+          1,
+          evaluationRows.length,
+          7
+        ).setBorder(
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
         );
       }
-      const summaryRow = 26 + rows.length;
-      const summaryRows = [
+      const summaryHeaderRow = 25 + evaluationRows.length;
+      sheet.getRange(
+        summaryHeaderRow,
+        1,
+        1,
+        7
+      ).merge().setValue(
+        "\u7DCF\u5408\u8A55\u4FA1"
+      ).setBackground(
+        "#1f4e78"
+      ).setFontColor(
+        "#ffffff"
+      ).setFontWeight(
+        "bold"
+      ).setFontSize(
+        13
+      ).setHorizontalAlignment(
+        "left"
+      ).setVerticalAlignment(
+        "middle"
+      );
+      const summaryStartRow = summaryHeaderRow + 1;
+      const statisticsRows = [
         [
           "\u52A0\u91CD\u5E73\u5747",
-          result.statistics.weightedAverage ?? ""
+          result.statistics.weightedAverage ?? "\u8A55\u4FA1\u4E0D\u53EF"
         ],
         [
           "\u8A55\u4FA1\u3070\u3089\u3064\u304D",
-          result.statistics.scoreStandardDeviation ?? ""
+          result.statistics.scoreStandardDeviation ?? "\u8A55\u4FA1\u4E0D\u53EF"
         ],
         [
           "\u6839\u62E0\u5341\u5206\u5EA6\u5E73\u5747",
-          result.statistics.evidenceAverage ?? ""
+          result.statistics.evidenceAverage ?? "\u8A55\u4FA1\u4E0D\u53EF"
         ],
         [
           "\u8A55\u4FA1\u6E08\u307F\u4EF6\u6570",
@@ -2895,40 +4118,152 @@ ${email}`
         [
           "\u8A55\u4FA1\u4FDD\u7559\u4EF6\u6570",
           result.statistics.holdCount
-        ],
-        [
-          "\u5F37\u307F",
-          result.aiResult.strengths
-        ],
-        [
-          "\u61F8\u5FF5\u70B9",
-          result.aiResult.concerns
-        ],
-        [
-          "\u7DCF\u8A55",
-          result.aiResult.summary
-        ],
-        [
-          "\u8981\u78BA\u8A8D\u4E8B\u9805",
-          result.reviewPoints.join("\n")
         ]
       ];
       sheet.getRange(
-        summaryRow,
+        summaryStartRow,
         1,
-        summaryRows.length,
+        statisticsRows.length,
         2
       ).setValues(
-        summaryRows
+        statisticsRows
+      ).setBorder(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ).setVerticalAlignment(
+        "middle"
       );
       sheet.getRange(
-        24,
+        summaryStartRow,
         1,
-        summaryRows.length + rows.length + 2,
-        7
+        statisticsRows.length,
+        1
+      ).setBackground(
+        "#d9eaf7"
+      ).setFontWeight(
+        "bold"
+      );
+      sheet.getRange(
+        summaryStartRow,
+        2,
+        statisticsRows.length,
+        1
+      ).setHorizontalAlignment(
+        "center"
+      ).setFontWeight(
+        "bold"
+      );
+      const detailStartRow = summaryStartRow + statisticsRows.length;
+      const detailRows = [
+        [
+          "\u5F37\u307F",
+          result.aiResult.strengths || "\u7279\u306B\u306A\u3057"
+        ],
+        [
+          "\u61F8\u5FF5\u70B9",
+          result.aiResult.concerns || "\u7279\u306B\u306A\u3057"
+        ],
+        [
+          "\u7DCF\u8A55",
+          result.aiResult.summary || "\u8A55\u4FA1\u7D50\u679C\u306A\u3057"
+        ],
+        [
+          "\u8981\u78BA\u8A8D\u4E8B\u9805",
+          result.reviewPoints.length > 0 ? result.reviewPoints.join("\n") : "\u7279\u306B\u306A\u3057"
+        ]
+      ];
+      sheet.getRange(
+        detailStartRow,
+        1,
+        detailRows.length,
+        2
+      ).setValues(
+        detailRows
       ).setWrap(
         true
+      ).setVerticalAlignment(
+        "top"
+      ).setBorder(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
       );
+      sheet.getRange(
+        detailStartRow,
+        1,
+        1,
+        2
+      ).setBackground(
+        "#e2f0d9"
+      );
+      sheet.getRange(
+        detailStartRow + 1,
+        1,
+        1,
+        2
+      ).setBackground(
+        "#fce8e6"
+      );
+      sheet.getRange(
+        detailStartRow + 2,
+        1,
+        1,
+        2
+      ).setBackground(
+        "#fff2cc"
+      );
+      sheet.getRange(
+        detailStartRow + 3,
+        1,
+        1,
+        2
+      ).setBackground(
+        "#fde9d9"
+      );
+      sheet.getRange(
+        detailStartRow,
+        1,
+        detailRows.length,
+        1
+      ).setFontWeight(
+        "bold"
+      );
+      sheet.setColumnWidth(
+        1,
+        180
+      );
+      sheet.setColumnWidth(
+        2,
+        260
+      );
+      sheet.setColumnWidth(
+        3,
+        100
+      );
+      sheet.setColumnWidth(
+        4,
+        110
+      );
+      sheet.setColumnWidth(
+        5,
+        320
+      );
+      sheet.setColumnWidth(
+        6,
+        320
+      );
+      sheet.setColumnWidth(
+        7,
+        320
+      );
+      SpreadsheetApp.flush();
     }
     requireAdmin() {
       const properties = PropertiesService.getScriptProperties();
@@ -4140,7 +5475,7 @@ ${email}`
           headers.length
         ).createFilter();
       }
-      const wrapColumns = /* @__PURE__ */ new Set([
+      const wrapColumns2 = /* @__PURE__ */ new Set([
         "\u73FE\u4F4F\u6240",
         "\u5B66\u6B74\u30B5\u30DE\u30EA\u30FC",
         "\u8077\u6B74\u30B5\u30DE\u30EA\u30FC",
@@ -4151,7 +5486,7 @@ ${email}`
       headers.forEach(
         (header, index) => {
           const column = index + 1;
-          if (wrapColumns.has(
+          if (wrapColumns2.has(
             header
           )) {
             sheet.setColumnWidth(
@@ -4396,6 +5731,13 @@ ${email}`
     initializeResumeSession();
     createResumeImportMenu();
     createAiEvaluationMenu();
+    createUiMenu();
+  }
+  function formatAllUiSheets() {
+    formatAllSheets();
+    SpreadsheetApp.getUi().alert(
+      "\u5168\u30B7\u30FC\u30C8\u306E\u8868\u793A\u3092\u6574\u3048\u307E\u3057\u305F\u3002"
+    );
   }
   function onSelectionChange(e) {
     try {
@@ -4704,6 +6046,14 @@ ${email}`
       )
     ).addToUi();
   }
+  function createUiMenu() {
+    SpreadsheetApp.getUi().createMenu(
+      "\u8868\u793A\u8A2D\u5B9A"
+    ).addItem(
+      "\u5168\u30B7\u30FC\u30C8\u306E\u8868\u793A\u3092\u6574\u3048\u308B",
+      "formatAllUiSheets"
+    ).addToUi();
+  }
   function initializeResumeSession() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const activeSheet = spreadsheet.getActiveSheet();
@@ -4844,6 +6194,10 @@ function onSelectionChange(...args) {
 
 function onEdit(...args) {
   return GasApp.onEdit(...args);
+}
+
+function formatAllUiSheets(...args) {
+  return GasApp.formatAllUiSheets(...args);
 }
 
 function setupApiKey(...args) {

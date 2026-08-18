@@ -1192,6 +1192,10 @@ export class AiEvaluationLegacyService {
       '- 記載のない事実を推測・創作しないでください。',
       '- 根拠が不足している項目は「評価保留」にしてください。',
       '- 年齢、性別、住所、氏名など評価に不要な個人属性を判断材料にしないでください。',
+      '- statusは必ず「評価済み」または「評価保留」のどちらかだけを返してください。',
+      '- 1〜5のスコアを付けられる場合は必ずstatusを「評価済み」にしてください。',
+      '- statusが「評価保留」の場合のみscoreを0にしてください。',
+      '- statusが「評価済み」の場合、scoreは必ず1〜5の整数にしてください。',
       '- スコアは1〜5です。',
       '- evidenceLevelも1〜5です。',
       '- 根拠として応募者データのどの内容を使用したかをsourceEvidenceへ記載してください。',
@@ -1721,19 +1725,38 @@ export class AiEvaluationLegacyService {
           (
             item: EvaluationItem,
           ): EvaluationItem => {
-            const status =
-              item.status ===
-                '評価済み'
-                ? '評価済み'
-                : '評価保留';
+            const rawStatus =
+              String(
+                item.status ?? '',
+              ).trim();
+
+            const scoreValue =
+              Number(
+                item.score,
+              );
+
+            const status:
+              '評価済み' |
+              '評価保留' =
+                rawStatus ===
+                  '評価済み' ||
+                rawStatus ===
+                  '評価済' ||
+                (
+                  Number.isFinite(
+                    scoreValue,
+                  ) &&
+                  scoreValue >= 1 &&
+                  scoreValue <= 5
+                )
+                  ? '評価済み'
+                  : '評価保留';
 
             const score =
               status ===
                 '評価済み'
                 ? this.clamp(
-                    Number(
-                      item.score,
-                    ),
+                    scoreValue,
                     1,
                     5,
                   )
@@ -3039,172 +3062,454 @@ export class AiEvaluationLegacyService {
   }
 
   private showResult(
-    sheet:
-      GoogleAppsScript.Spreadsheet.Sheet,
-    result:
-      FullEvaluationResult,
-  ): void {
-    sheet
-      .getRange(
-        'A24:G100',
-      )
-      .clearContent();
+  sheet:
+    GoogleAppsScript.Spreadsheet.Sheet,
+  result:
+    FullEvaluationResult,
+): void {
+  /*
+   * AI評価結果・総合結果エリアを初期化
+   */
+  sheet
+    .getRange(
+      'A24:G100',
+    )
+    .clearContent()
+    .clearFormat();
 
-    const headers = [
-      '評価項目',
-      '状態',
-      'スコア',
-      '根拠十分度',
-      '評価理由',
-      '根拠',
-      '追加質問',
-    ];
+  /*
+   * ================================
+   * AI評価結果
+   * ================================
+   */
 
-    sheet
-      .getRange(
-        24,
-        1,
-        1,
-        headers.length,
-      )
-      .setValues([
-        headers,
-      ])
-      .setFontWeight(
-        'bold',
+  sheet
+    .getRange(
+      'A24:G24',
+    )
+    .setValues([
+      [
+        '評価項目',
+        '状態',
+        'スコア',
+        '根拠十分度',
+        '評価理由',
+        '根拠',
+        '追加質問',
+      ],
+    ])
+    .setFontWeight(
+      'bold',
+    )
+    .setBackground(
+      '#4a86e8',
+    )
+    .setFontColor(
+      '#ffffff',
+    )
+    .setHorizontalAlignment(
+      'center',
+    )
+    .setVerticalAlignment(
+      'middle',
+    );
+
+  const evaluationRows =
+    result
+      .aiResult
+      .evaluations
+      .map(
+        (
+          item:
+            EvaluationItem,
+        ): unknown[] => [
+          item.criterion,
+          item.status,
+          item.score,
+          item.evidenceLevel,
+          item.reason,
+          item.sourceEvidence,
+          item.followUpQuestion,
+        ],
       );
 
-    const rows =
-      result
-        .aiResult
-        .evaluations
-        .map(
-          (
-            item:
-              EvaluationItem,
-          ): unknown[] => [
-            item.criterion,
-            item.status,
-            item.score,
-            item.evidenceLevel,
-            item.reason,
-            item.sourceEvidence,
-            item.followUpQuestion,
-          ],
-        );
-
-    if (
-      rows.length > 0
-    ) {
-      sheet
-        .getRange(
-          25,
-          1,
-          rows.length,
-          7,
-        )
-        .setValues(
-          rows,
-        );
-    }
-
-    const summaryRow =
-      26 +
-      rows.length;
-
-    const summaryRows:
-      unknown[][] = [
-        [
-          '加重平均',
-          result
-            .statistics
-            .weightedAverage ??
-          '',
-        ],
-
-        [
-          '評価ばらつき',
-          result
-            .statistics
-            .scoreStandardDeviation ??
-          '',
-        ],
-
-        [
-          '根拠十分度平均',
-          result
-            .statistics
-            .evidenceAverage ??
-          '',
-        ],
-
-        [
-          '評価済み件数',
-          result
-            .statistics
-            .evaluatedCount,
-        ],
-
-        [
-          '評価保留件数',
-          result
-            .statistics
-            .holdCount,
-        ],
-
-        [
-          '強み',
-          result
-            .aiResult
-            .strengths,
-        ],
-
-        [
-          '懸念点',
-          result
-            .aiResult
-            .concerns,
-        ],
-
-        [
-          '総評',
-          result
-            .aiResult
-            .summary,
-        ],
-
-        [
-          '要確認事項',
-          result
-            .reviewPoints
-            .join('\n'),
-        ],
-      ];
-
+  if (
+    evaluationRows.length > 0
+  ) {
     sheet
       .getRange(
-        summaryRow,
+        25,
         1,
-        summaryRows.length,
-        2,
+        evaluationRows.length,
+        7,
       )
       .setValues(
-        summaryRows,
-      );
-
-    sheet
-      .getRange(
-        24,
-        1,
-        summaryRows.length +
-          rows.length +
-          2,
-        7,
+        evaluationRows,
       )
       .setWrap(
         true,
+      )
+      .setVerticalAlignment(
+        'top',
+      );
+
+    sheet
+      .getRange(
+        25,
+        2,
+        evaluationRows.length,
+        3,
+      )
+      .setHorizontalAlignment(
+        'center',
+      );
+
+    sheet
+      .getRange(
+        25,
+        1,
+        evaluationRows.length,
+        7,
+      )
+      .setBorder(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
       );
   }
+
+  /*
+   * AI評価結果の直後。
+   *
+   * 以前は
+   * 26 + evaluationRows.length
+   *
+   * だったため1行空白が発生していた。
+   */
+  const summaryHeaderRow =
+    25 +
+    evaluationRows.length;
+
+  /*
+   * ================================
+   * 総合結果見出し
+   * ================================
+   */
+
+  sheet
+    .getRange(
+      summaryHeaderRow,
+      1,
+      1,
+      7,
+    )
+    .merge()
+    .setValue(
+      '総合評価',
+    )
+    .setBackground(
+      '#1f4e78',
+    )
+    .setFontColor(
+      '#ffffff',
+    )
+    .setFontWeight(
+      'bold',
+    )
+    .setFontSize(
+      13,
+    )
+    .setHorizontalAlignment(
+      'left',
+    )
+    .setVerticalAlignment(
+      'middle',
+    );
+
+  const summaryStartRow =
+    summaryHeaderRow +
+    1;
+
+  /*
+   * ================================
+   * 数値評価
+   * ================================
+   */
+
+  const statisticsRows:
+    unknown[][] = [
+      [
+        '加重平均',
+        result
+          .statistics
+          .weightedAverage ??
+          '評価不可',
+      ],
+
+      [
+        '評価ばらつき',
+        result
+          .statistics
+          .scoreStandardDeviation ??
+          '評価不可',
+      ],
+
+      [
+        '根拠十分度平均',
+        result
+          .statistics
+          .evidenceAverage ??
+          '評価不可',
+      ],
+
+      [
+        '評価済み件数',
+        result
+          .statistics
+          .evaluatedCount,
+      ],
+
+      [
+        '評価保留件数',
+        result
+          .statistics
+          .holdCount,
+      ],
+    ];
+
+  sheet
+    .getRange(
+      summaryStartRow,
+      1,
+      statisticsRows.length,
+      2,
+    )
+    .setValues(
+      statisticsRows,
+    )
+    .setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    )
+    .setVerticalAlignment(
+      'middle',
+    );
+
+  sheet
+    .getRange(
+      summaryStartRow,
+      1,
+      statisticsRows.length,
+      1,
+    )
+    .setBackground(
+      '#d9eaf7',
+    )
+    .setFontWeight(
+      'bold',
+    );
+
+  sheet
+    .getRange(
+      summaryStartRow,
+      2,
+      statisticsRows.length,
+      1,
+    )
+    .setHorizontalAlignment(
+      'center',
+    )
+    .setFontWeight(
+      'bold',
+    );
+
+  /*
+   * ================================
+   * AIによる文章評価
+   * ================================
+   */
+
+  const detailStartRow =
+    summaryStartRow +
+    statisticsRows.length;
+
+  const detailRows:
+    unknown[][] = [
+      [
+        '強み',
+        result
+          .aiResult
+          .strengths ||
+          '特になし',
+      ],
+
+      [
+        '懸念点',
+        result
+          .aiResult
+          .concerns ||
+          '特になし',
+      ],
+
+      [
+        '総評',
+        result
+          .aiResult
+          .summary ||
+          '評価結果なし',
+      ],
+
+      [
+        '要確認事項',
+        result
+          .reviewPoints
+          .length > 0
+            ? result
+                .reviewPoints
+                .join('\n')
+            : '特になし',
+      ],
+    ];
+
+  sheet
+    .getRange(
+      detailStartRow,
+      1,
+      detailRows.length,
+      2,
+    )
+    .setValues(
+      detailRows,
+    )
+    .setWrap(
+      true,
+    )
+    .setVerticalAlignment(
+      'top',
+    )
+    .setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    );
+
+  /*
+   * 強み
+   */
+  sheet
+    .getRange(
+      detailStartRow,
+      1,
+      1,
+      2,
+    )
+    .setBackground(
+      '#e2f0d9',
+    );
+
+  /*
+   * 懸念点
+   */
+  sheet
+    .getRange(
+      detailStartRow + 1,
+      1,
+      1,
+      2,
+    )
+    .setBackground(
+      '#fce8e6',
+    );
+
+  /*
+   * 総評
+   */
+  sheet
+    .getRange(
+      detailStartRow + 2,
+      1,
+      1,
+      2,
+    )
+    .setBackground(
+      '#fff2cc',
+    );
+
+  /*
+   * 要確認事項
+   */
+  sheet
+    .getRange(
+      detailStartRow + 3,
+      1,
+      1,
+      2,
+    )
+    .setBackground(
+      '#fde9d9',
+    );
+
+  sheet
+    .getRange(
+      detailStartRow,
+      1,
+      detailRows.length,
+      1,
+    )
+    .setFontWeight(
+      'bold',
+    );
+
+  /*
+   * レイアウト調整
+   */
+  sheet.setColumnWidth(
+    1,
+    180,
+  );
+
+  sheet.setColumnWidth(
+    2,
+    260,
+  );
+
+  sheet.setColumnWidth(
+    3,
+    100,
+  );
+
+  sheet.setColumnWidth(
+    4,
+    110,
+  );
+
+  sheet.setColumnWidth(
+    5,
+    320,
+  );
+
+  sheet.setColumnWidth(
+    6,
+    320,
+  );
+
+  sheet.setColumnWidth(
+    7,
+    320,
+  );
+
+  SpreadsheetApp.flush();
+}
 
   private requireAdmin(): void {
     const properties =
