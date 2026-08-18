@@ -449,17 +449,23 @@ export class AiEvaluationLegacyService {
           .statistics
           .holdCount,
 
-        result
-          .aiResult
-          .strengths,
+        this.sanitizeSpreadsheetValue(
+          result
+            .aiResult
+            .strengths,
+        ),
 
-        result
-          .aiResult
-          .concerns,
+        this.sanitizeSpreadsheetValue(
+          result
+            .aiResult
+            .concerns,
+        ),
 
-        result
-          .reviewPoints
-          .join('\n'),
+        this.sanitizeSpreadsheetValue(
+          result
+            .reviewPoints
+            .join('\n'),
+        ),
       ]);
     }
 
@@ -1709,17 +1715,37 @@ export class AiEvaluationLegacyService {
         ),
       );
 
+    const seenEvaluationCriteria =
+      new Set<string>();
+
     const normalized =
       result.evaluations
         .filter(
           (
             item: EvaluationItem,
-          ): boolean =>
-            criteriaNames.has(
+          ): boolean => {
+            const criterion =
               String(
                 item.criterion,
-              ),
-            ),
+              ).trim();
+
+            if (
+              !criteriaNames.has(
+                criterion,
+              ) ||
+              seenEvaluationCriteria.has(
+                criterion,
+              )
+            ) {
+              return false;
+            }
+
+            seenEvaluationCriteria.add(
+              criterion,
+            );
+
+            return true;
+          },
         )
         .map(
           (
@@ -2528,18 +2554,47 @@ export class AiEvaluationLegacyService {
       GoogleAppsScript.Spreadsheet.Sheet,
     department: string,
   ): CriteriaRow[] {
-    return this
-      .findAllCriteria(
-        sheet,
-      )
-      .filter(
-        (
-          item:
-            CriteriaRow,
-        ): boolean =>
-          item.department ===
-          department,
-      );
+    const criteria =
+      this
+        .findAllCriteria(
+          sheet,
+        )
+        .filter(
+          (
+            item:
+              CriteriaRow,
+          ): boolean =>
+            item.department ===
+            department,
+        );
+
+    const seen =
+      new Set<string>();
+
+    return criteria.filter(
+      (
+        item:
+          CriteriaRow,
+      ): boolean => {
+        const key =
+          item.criterion
+            .trim();
+
+        if (
+          seen.has(
+            key,
+          )
+        ) {
+          return false;
+        }
+
+        seen.add(
+          key,
+        );
+
+        return true;
+      },
+    );
   }
 
   private findAllCriteria(
@@ -2600,6 +2655,9 @@ export class AiEvaluationLegacyService {
     applicants: Applicant[],
     departments: string[],
   ): void {
+    const isInitialSetup =
+      sheet.getLastRow() === 0;
+
     const previousSelector =
       String(
         sheet
@@ -2622,8 +2680,10 @@ export class AiEvaluationLegacyService {
               applicant:
                 Applicant,
             ): string =>
-              this.createSelectorValue(
-                applicant,
+              this.sanitizeSpreadsheetValue(
+                this.createSelectorValue(
+                  applicant,
+                ),
               ),
           )
           .filter(
@@ -2642,7 +2702,9 @@ export class AiEvaluationLegacyService {
             (
               value: string,
             ): string =>
-              value.trim(),
+              this.sanitizeSpreadsheetValue(
+                value.trim(),
+              ),
           )
           .filter(
             (
@@ -2653,38 +2715,109 @@ export class AiEvaluationLegacyService {
       ),
     ];
 
-    sheet.clear();
+    /*
+     * 既存シートではUI本体を一切クリアしない。
+     * 初回作成時だけタイトル・見出し・列幅を設定する。
+     */
+    if (
+      isInitialSetup
+    ) {
+      sheet
+        .getRange(
+          'A1:G1',
+        )
+        .merge()
+        .setValue(
+          'AI面接評価支援',
+        )
+        .setFontWeight(
+          'bold',
+        )
+        .setFontSize(
+          14,
+        );
 
-    sheet
-      .getRange(
-        'A1:G1',
-      )
-      .merge()
-      .setValue(
-        'AI面接評価支援',
-      )
-      .setFontWeight(
-        'bold',
-      )
-      .setFontSize(
-        14,
+      sheet
+        .getRange(
+          'A2',
+        )
+        .setValue(
+          '評価対象',
+        );
+
+      sheet
+        .getRange(
+          'A3',
+        )
+        .setValue(
+          '評価部門',
+        );
+
+      sheet
+        .getRange(
+          'A5:B5',
+        )
+        .setValues([
+          [
+            '応募者情報',
+            '内容',
+          ],
+        ])
+        .setFontWeight(
+          'bold',
+        );
+
+      sheet.setColumnWidth(
+        1,
+        180,
       );
 
-    sheet
-      .getRange(
-        'A2',
-      )
-      .setValue(
-        '評価対象',
+      sheet.setColumnWidth(
+        2,
+        420,
       );
 
-    sheet
-      .getRange(
-        'A3',
-      )
-      .setValue(
-        '評価部門',
+      sheet.setColumnWidth(
+        3,
+        120,
       );
+
+      sheet.setColumnWidth(
+        4,
+        140,
+      );
+
+      sheet.setColumnWidth(
+        5,
+        320,
+      );
+
+      sheet.setColumnWidth(
+        6,
+        320,
+      );
+
+      sheet.setColumnWidth(
+        7,
+        320,
+      );
+
+      sheet
+        .getRange(
+          'A:G',
+        )
+        .setVerticalAlignment(
+          'top',
+        );
+
+      sheet
+        .getRange(
+          'B:G',
+        )
+        .setWrap(
+          true,
+        );
+    }
 
     const applicantCell =
       sheet.getRange(
@@ -2696,12 +2829,13 @@ export class AiEvaluationLegacyService {
         'B3',
       );
 
+    /*
+     * 値は消さず、プルダウン候補だけ更新する。
+     */
     applicantCell
-      .clearContent()
       .clearDataValidations();
 
     departmentCell
-      .clearContent()
       .clearDataValidations();
 
     const applicantHelperColumn =
@@ -2799,6 +2933,10 @@ export class AiEvaluationLegacyService {
         );
     }
 
+    /*
+     * 現在の選択がまだ存在するなら完全維持。
+     * 無効になった場合だけ先頭候補へ切り替える。
+     */
     if (
       previousSelector &&
       applicantValues.includes(
@@ -2816,6 +2954,9 @@ export class AiEvaluationLegacyService {
         .setValue(
           applicantValues[0],
         );
+    } else {
+      applicantCell
+        .clearContent();
     }
 
     if (
@@ -2835,72 +2976,10 @@ export class AiEvaluationLegacyService {
         .setValue(
           departmentValues[0],
         );
+    } else {
+      departmentCell
+        .clearContent();
     }
-
-    sheet
-      .getRange(
-        'A5:B5',
-      )
-      .setValues([
-        [
-          '応募者情報',
-          '内容',
-        ],
-      ])
-      .setFontWeight(
-        'bold',
-      );
-
-    sheet.setColumnWidth(
-      1,
-      180,
-    );
-
-    sheet.setColumnWidth(
-      2,
-      420,
-    );
-
-    sheet.setColumnWidth(
-      3,
-      120,
-    );
-
-    sheet.setColumnWidth(
-      4,
-      140,
-    );
-
-    sheet.setColumnWidth(
-      5,
-      320,
-    );
-
-    sheet.setColumnWidth(
-      6,
-      320,
-    );
-
-    sheet.setColumnWidth(
-      7,
-      320,
-    );
-
-    sheet
-      .getRange(
-        'A:G',
-      )
-      .setVerticalAlignment(
-        'top',
-      );
-
-    sheet
-      .getRange(
-        'B:G',
-      )
-      .setWrap(
-        true,
-      );
 
     try {
       sheet.hideColumns(
@@ -2923,42 +3002,58 @@ export class AiEvaluationLegacyService {
       unknown[][] = [
         [
           '氏名',
-          applicant['氏名'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['氏名'],
+          ),
         ],
 
         [
           '最終学歴',
-          applicant['最終学歴'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['最終学歴'],
+          ),
         ],
 
         [
           '学歴サマリー',
-          applicant['学歴サマリー'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['学歴サマリー'],
+          ),
         ],
 
         [
           '直近の職歴',
-          applicant['直近の職歴'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['直近の職歴'],
+          ),
         ],
 
         [
           '職歴サマリー',
-          applicant['職歴サマリー'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['職歴サマリー'],
+          ),
         ],
 
         [
           '保有資格',
-          applicant['保有資格'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['保有資格'],
+          ),
         ],
 
         [
           '自己PR要約',
-          applicant['自己PR要約'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['自己PR要約'],
+          ),
         ],
 
         [
           '特記事項',
-          applicant['特記事項'] ?? '',
+          this.sanitizeSpreadsheetValue(
+            applicant['特記事項'],
+          ),
         ],
       ];
 
@@ -3001,7 +3096,7 @@ export class AiEvaluationLegacyService {
   ): void {
     sheet
       .getRange(
-        'A15:C30',
+        'A15:C23',
       )
       .clearContent();
 
@@ -3032,9 +3127,13 @@ export class AiEvaluationLegacyService {
           item:
             CriteriaRow,
         ): unknown[] => [
-          item.criterion,
+          this.sanitizeSpreadsheetValue(
+            item.criterion,
+          ),
           item.weight,
-          item.description,
+          this.sanitizeSpreadsheetValue(
+            item.description,
+          ),
         ],
       );
 
@@ -3123,13 +3222,21 @@ export class AiEvaluationLegacyService {
           item:
             EvaluationItem,
         ): unknown[] => [
-          item.criterion,
+          this.sanitizeSpreadsheetValue(
+            item.criterion,
+          ),
           item.status,
           item.score,
           item.evidenceLevel,
-          item.reason,
-          item.sourceEvidence,
-          item.followUpQuestion,
+          this.sanitizeSpreadsheetValue(
+            item.reason,
+          ),
+          this.sanitizeSpreadsheetValue(
+            item.sourceEvidence,
+          ),
+          this.sanitizeSpreadsheetValue(
+            item.followUpQuestion,
+          ),
         ],
       );
 
@@ -3344,37 +3451,45 @@ export class AiEvaluationLegacyService {
     unknown[][] = [
       [
         '強み',
-        result
-          .aiResult
-          .strengths ||
-          '特になし',
+        this.sanitizeSpreadsheetValue(
+          result
+            .aiResult
+            .strengths ||
+            '特になし',
+        ),
       ],
 
       [
         '懸念点',
-        result
-          .aiResult
-          .concerns ||
-          '特になし',
+        this.sanitizeSpreadsheetValue(
+          result
+            .aiResult
+            .concerns ||
+            '特になし',
+        ),
       ],
 
       [
         '総評',
-        result
-          .aiResult
-          .summary ||
-          '評価結果なし',
+        this.sanitizeSpreadsheetValue(
+          result
+            .aiResult
+            .summary ||
+            '評価結果なし',
+        ),
       ],
 
       [
         '要確認事項',
-        result
-          .reviewPoints
-          .length > 0
-            ? result
-                .reviewPoints
-                .join('\n')
-            : '特になし',
+        this.sanitizeSpreadsheetValue(
+          result
+            .reviewPoints
+            .length > 0
+              ? result
+                  .reviewPoints
+                  .join('\n')
+              : '特になし',
+        ),
       ],
     ];
 
@@ -3767,4 +3882,16 @@ export class AiEvaluationLegacyService {
       ),
     );
   }
-}
+    private sanitizeSpreadsheetValue(
+      value: unknown,
+    ): string {
+      const text =
+        String(value ?? '');
+
+      if (/^[=+\-@]/.test(text)) {
+        return `'${text}`;
+      }
+
+      return text;
+    }
+  }
