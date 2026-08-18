@@ -20,9 +20,15 @@ export class GasDriveResumeRepository
     private readonly errorFolderId: string,
   ) {}
 
-  findPending(
+  findPendingFileIds(
     limit: number,
-  ): ResumeSource[] {
+  ): string[] {
+    if (
+      limit <= 0
+    ) {
+      return [];
+    }
+
     const inboxFolder =
       DriveApp.getFolderById(
         this.inboxFolderId,
@@ -32,7 +38,7 @@ export class GasDriveResumeRepository
       inboxFolder.getFiles();
 
     const results:
-      ResumeSource[] = [];
+      string[] = [];
 
     while (
       files.hasNext() &&
@@ -42,13 +48,32 @@ export class GasDriveResumeRepository
         files.next();
 
       results.push(
-        this.toResumeSource(
-          file,
-        ),
+        file.getId(),
       );
     }
 
     return results;
+  }
+
+  getSource(
+    fileId: string,
+  ): ResumeSource {
+    if (
+      !fileId
+    ) {
+      throw new Error(
+        '履歴書ファイルIDがありません。',
+      );
+    }
+
+    const file =
+      DriveApp.getFileById(
+        fileId,
+      );
+
+    return this.toResumeSource(
+      file,
+    );
   }
 
   moveToProcessed(
@@ -82,8 +107,25 @@ export class GasDriveResumeRepository
     file:
       GoogleAppsScript.Drive.File,
   ): ResumeSource {
+    const fileId =
+      file.getId();
+
+    const fileName =
+      file.getName();
+
     const fileSize =
       file.getSize();
+
+    const mimeType =
+      file.getMimeType();
+
+    if (
+      fileSize <= 0
+    ) {
+      throw new Error(
+        `空のファイルです: ${fileName}`,
+      );
+    }
 
     if (
       fileSize >
@@ -92,12 +134,9 @@ export class GasDriveResumeRepository
         .maxFileSizeBytes
     ) {
       throw new Error(
-        `ファイルサイズが上限10MBを超えています: ${file.getName()}`,
+        `ファイルサイズが上限10MBを超えています: ${fileName}`,
       );
     }
-
-    const mimeType =
-      file.getMimeType();
 
     if (
       mimeType ===
@@ -108,20 +147,23 @@ export class GasDriveResumeRepository
           .getBlob()
           .getDataAsString(
             'UTF-8',
-          );
+          )
+          .trim();
+
+      if (
+        !text
+      ) {
+        throw new Error(
+          `テキストファイルの内容が空です: ${fileName}`,
+        );
+      }
 
       return {
-        fileId:
-          file.getId(),
-
-        fileName:
-          file.getName(),
-
+        fileId,
+        fileName,
         mimeType,
-
         size:
           fileSize,
-
         text,
       };
     }
@@ -135,24 +177,34 @@ export class GasDriveResumeRepository
           file,
         );
 
+      if (
+        !text.trim()
+      ) {
+        throw new Error(
+          `PDFからテキストを抽出できませんでした: ${fileName}`,
+        );
+      }
+
       return {
-        fileId:
-          file.getId(),
-
-        fileName:
-          file.getName(),
-
+        fileId,
+        fileName,
         mimeType,
-
         size:
           fileSize,
-
-        text,
+        text:
+          text.trim(),
       };
     }
 
     throw new Error(
-      `未対応のファイル形式です（対応形式: テキストファイル / PDF）: ${mimeType}`,
+      [
+        '未対応のファイル形式です。',
+        '対応形式: テキストファイル / PDF',
+        `ファイル: ${fileName}`,
+        `MIMEタイプ: ${mimeType}`,
+      ].join(
+        ' ',
+      ),
     );
   }
 
@@ -160,71 +212,169 @@ export class GasDriveResumeRepository
     file:
       GoogleAppsScript.Drive.File,
   ): string {
+    const fileName =
+      file.getName();
+
     const blob =
       file.getBlob();
 
     const resource = {
       name:
-        `temp_convert_${file.getName()}`,
+        `temp_convert_${fileName}`,
 
       mimeType:
         'application/vnd.google-apps.document',
     };
 
-    const advancedDrive =
-      Drive!;
-
     if (
-      !advancedDrive.Files
+      typeof Drive ===
+        'undefined' ||
+      !Drive.Files
     ) {
       throw new Error(
         'Advanced Drive Serviceが有効になっていません。',
       );
     }
 
-    const converted =
-      advancedDrive.Files.create(
-        resource,
-        blob,
-        {
-          ocr: true,
-          ocrLanguage:
-            'ja',
-        },
-      );
-
-    if (!converted.id) {
-      throw new Error(
-        `PDFのOCR変換に失敗しました: ${file.getName()}`,
-      );
-    }
+    let convertedId = '';
 
     try {
-      const document =
-        DocumentApp.openById(
-          converted.id,
+      const converted =
+        Drive.Files.create(
+          resource,
+          blob,
+          {
+            ocr: true,
+            ocrLanguage:
+              'ja',
+          },
         );
 
-      return document
-        .getBody()
-        .getText();
+      convertedId =
+        String(
+          converted.id ?? '',
+        ).trim();
+
+      if (
+        !convertedId
+      ) {
+        throw new Error(
+          `PDFのOCR変換に失敗しました: ${fileName}`,
+        );
+      }
+
+      const text =
+        this.readConvertedDocument(
+          convertedId,
+          fileName,
+        );
+
+      if (
+        !text
+      ) {
+        throw new Error(
+          `PDFのOCR結果が空です: ${fileName}`,
+        );
+      }
+
+      return text;
     } finally {
+      if (
+        convertedId
+      ) {
+        this.deleteTemporaryFile(
+          convertedId,
+        );
+      }
+    }
+  }
+
+  private readConvertedDocument(
+    documentId: string,
+    fileName: string,
+  ): string {
+    const maxAttempts =
+      3;
+
+    let lastError:
+      unknown = null;
+
+    for (
+      let attempt = 1;
+      attempt <= maxAttempts;
+      attempt++
+    ) {
       try {
-        DriveApp
-          .getFileById(
-            converted.id,
-          )
-          .setTrashed(
-            true,
+        const document =
+          DocumentApp.openById(
+            documentId,
+          );
+
+        const text =
+          document
+            .getBody()
+            .getText()
+            .trim();
+
+        if (
+          text
+        ) {
+          return text;
+        }
+
+        lastError =
+          new Error(
+            'OCR結果が空です。',
           );
       } catch (
         error: unknown
       ) {
-        console.error(
-          'PDF変換用一時ファイルの削除に失敗しました。',
-          error,
+        lastError =
+          error;
+      }
+
+      if (
+        attempt <
+        maxAttempts
+      ) {
+        Utilities.sleep(
+          attempt *
+          500,
         );
       }
+    }
+
+    const message =
+      lastError instanceof Error
+        ? lastError.message
+        : String(
+            lastError ??
+              '詳細不明',
+          );
+
+    throw new Error(
+      `PDF変換後のGoogleドキュメントを読み取れませんでした: ${fileName} / ${message}`,
+    );
+  }
+
+  private deleteTemporaryFile(
+    fileId: string,
+  ): void {
+    try {
+      DriveApp
+        .getFileById(
+          fileId,
+        )
+        .setTrashed(
+          true,
+        );
+    } catch (
+      error: unknown
+    ) {
+      console.error(
+        'PDF変換用一時ファイルの削除に失敗しました。',
+        error,
+      );
     }
   }
 
@@ -232,6 +382,22 @@ export class GasDriveResumeRepository
     fileId: string,
     destinationFolderId: string,
   ): void {
+    if (
+      !fileId
+    ) {
+      throw new Error(
+        '移動対象のファイルIDがありません。',
+      );
+    }
+
+    if (
+      !destinationFolderId
+    ) {
+      throw new Error(
+        '移動先フォルダIDがありません。',
+      );
+    }
+
     const file =
       DriveApp.getFileById(
         fileId,

@@ -27,11 +27,23 @@ export class GasResumeCandidateRepository
       this.getOrCreateInterviewerSheet();
 
     const headers =
-      this.getHeaders(sheet);
+      this.getHeaders(
+        sheet,
+      );
+
+    if (
+      headers.length === 0
+    ) {
+      throw new Error(
+        '面接官シートのヘッダーを取得できません。',
+      );
+    }
 
     const row =
       headers.map(
-        (header: string): unknown =>
+        (
+          header: string,
+        ): unknown =>
           this.resolveValue(
             header,
             candidate,
@@ -40,7 +52,9 @@ export class GasResumeCandidateRepository
           ),
       );
 
-    sheet.appendRow(row);
+    sheet.appendRow(
+      row,
+    );
 
     this.formatInterviewerSheet(
       sheet,
@@ -51,48 +65,23 @@ export class GasResumeCandidateRepository
     source: ResumeSource,
     message: string,
   ): void {
-    const sheet =
-      this.getOrCreateInterviewerSheet();
-
-    const headers =
-      this.getHeaders(sheet);
-
-    const row =
-      headers.map(
-        (header: string): unknown => {
-          switch (header) {
-            case '面接ステータス':
-              return ResumeConfig
-                .defaultInterviewStatus;
-
-            case '処理ステータス':
-              return 'エラー';
-
-            case '処理メッセージ':
-              return this.sanitize(
-                message,
-              );
-
-            case '元ファイル名':
-              return this.sanitize(
-                source.fileName,
-              );
-
-            case '履歴書リンク':
-              return this.createDriveUrl(
-                source.fileId,
-              );
-
-            case 'タイムスタンプ':
-              return new Date();
-
-            default:
-              return '';
-          }
-        },
-      );
-
-    sheet.appendRow(row);
+    /*
+     * エラーデータは採用担当者が参照する
+     * 面接官シートには保存しない。
+     *
+     * エラー詳細は
+     * GasImportLogRepository 側で記録する。
+     */
+    console.error(
+      [
+        '[ResumeImportError]',
+        `fileId=${source.fileId}`,
+        `fileName=${source.fileName}`,
+        `message=${message}`,
+      ].join(
+        ' / ',
+      ),
+    );
   }
 
   isDuplicate(
@@ -106,15 +95,21 @@ export class GasResumeCandidateRepository
         .getDataRange()
         .getValues();
 
-    if (values.length < 2) {
+    if (
+      values.length < 2
+    ) {
       return false;
     }
 
     const headers =
       values[0]
         ?.map(
-          (value: unknown): string =>
-            String(value).trim(),
+          (
+            value: unknown,
+          ): string =>
+            String(
+              value,
+            ).trim(),
         ) ?? [];
 
     const nameIndex =
@@ -132,14 +127,21 @@ export class GasResumeCandidateRepository
         '電話番号',
       );
 
-    if (nameIndex === -1) {
+    const processStatusIndex =
+      headers.indexOf(
+        '処理ステータス',
+      );
+
+    if (
+      nameIndex === -1
+    ) {
       return false;
     }
 
     const name =
-      String(
-        candidate.name ?? '',
-      ).trim();
+      this.normalizeName(
+        candidate.name,
+      );
 
     const email =
       this.normalizeEmail(
@@ -151,18 +153,48 @@ export class GasResumeCandidateRepository
         candidate.phone,
       );
 
-    if (!name) {
+    if (
+      !name
+    ) {
       return false;
     }
 
     return values
-      .slice(1)
+      .slice(
+        1,
+      )
       .some(
-        (row: unknown[]): boolean => {
+        (
+          row: unknown[],
+        ): boolean => {
+          /*
+           * 過去のエラー行が残っている場合は
+           * 重複判定の対象外にする。
+           */
+          if (
+            processStatusIndex >= 0
+          ) {
+            const processStatus =
+              String(
+                row[
+                  processStatusIndex
+                ] ?? '',
+              ).trim();
+
+            if (
+              processStatus ===
+              'エラー'
+            ) {
+              return false;
+            }
+          }
+
           const storedName =
-            String(
-              row[nameIndex] ?? '',
-            ).trim();
+            this.normalizeName(
+              row[
+                nameIndex
+              ],
+            );
 
           if (
             storedName !==
@@ -174,29 +206,50 @@ export class GasResumeCandidateRepository
           const storedEmail =
             emailIndex >= 0
               ? this.normalizeEmail(
-                  row[emailIndex],
+                  row[
+                    emailIndex
+                  ],
                 )
               : '';
 
           const storedPhone =
             phoneIndex >= 0
               ? this.normalizePhone(
-                  row[phoneIndex],
+                  row[
+                    phoneIndex
+                  ],
                 )
               : '';
 
           const sameEmail =
-            Boolean(email) &&
-            Boolean(storedEmail) &&
+            Boolean(
+              email,
+            ) &&
+            Boolean(
+              storedEmail,
+            ) &&
             email ===
               storedEmail;
 
           const samePhone =
-            Boolean(phone) &&
-            Boolean(storedPhone) &&
+            Boolean(
+              phone,
+            ) &&
+            Boolean(
+              storedPhone,
+            ) &&
             phone ===
               storedPhone;
 
+          /*
+           * 同姓同名のみでは重複にしない。
+           *
+           * 氏名一致
+           * +
+           * メールアドレス一致
+           * または
+           * 電話番号一致
+           */
           return (
             sameEmail ||
             samePhone
@@ -207,25 +260,30 @@ export class GasResumeCandidateRepository
 
   rebuildApplicantList(): void {
     const spreadsheet =
-      SpreadsheetApp.openById(
-        this.spreadsheetId,
-      );
+      SpreadsheetApp
+        .openById(
+          this.spreadsheetId,
+        );
 
     const sourceSheet =
       this.getOrCreateInterviewerSheet();
 
     let targetSheet =
-      spreadsheet.getSheetByName(
-        ResumeConfig
-          .applicantListSheetName,
-      );
-
-    if (!targetSheet) {
-      targetSheet =
-        spreadsheet.insertSheet(
+      spreadsheet
+        .getSheetByName(
           ResumeConfig
             .applicantListSheetName,
         );
+
+    if (
+      !targetSheet
+    ) {
+      targetSheet =
+        spreadsheet
+          .insertSheet(
+            ResumeConfig
+              .applicantListSheetName,
+          );
     }
 
     targetSheet.clear();
@@ -234,6 +292,14 @@ export class GasResumeCandidateRepository
       this.getHeaders(
         sourceSheet,
       );
+
+    if (
+      headers.length === 0
+    ) {
+      throw new Error(
+        '面接官シートのヘッダーがありません。',
+      );
+    }
 
     const formula =
       this.createApplicantListFormula(
@@ -248,9 +314,10 @@ export class GasResumeCandidateRepository
         formula,
       );
 
-    targetSheet.setFrozenRows(
-      1,
-    );
+    targetSheet
+      .setFrozenRows(
+        1,
+      );
 
     SpreadsheetApp.flush();
 
@@ -259,28 +326,36 @@ export class GasResumeCandidateRepository
         .applicantListFields
         .length;
 
-    targetSheet
-      .getRange(
-        1,
-        1,
-        1,
-        headerWidth,
-      )
-      .setFontWeight(
-        'bold',
-      )
-      .setBackground(
-        '#4a86e8',
-      )
-      .setFontColor(
-        '#ffffff',
-      )
-      .setWrap(
-        true,
-      )
-      .setVerticalAlignment(
-        'middle',
-      );
+    if (
+      headerWidth > 0
+    ) {
+      targetSheet
+        .getRange(
+          1,
+          1,
+          1,
+          headerWidth,
+        )
+        .setFontWeight(
+          'bold',
+        )
+        .setBackground(
+          '#4a86e8',
+        )
+        .setFontColor(
+          '#ffffff',
+        )
+        .setWrap(
+          true,
+        )
+        .setVerticalAlignment(
+          'middle',
+        );
+    }
+
+    this.formatApplicantList(
+      targetSheet,
+    );
 
     this.protectApplicantList(
       targetSheet,
@@ -290,23 +365,29 @@ export class GasResumeCandidateRepository
   private getOrCreateInterviewerSheet():
     GoogleAppsScript.Spreadsheet.Sheet {
     const spreadsheet =
-      SpreadsheetApp.openById(
-        this.spreadsheetId,
-      );
+      SpreadsheetApp
+        .openById(
+          this.spreadsheetId,
+        );
 
     let sheet =
-      spreadsheet.getSheetByName(
-        ResumeConfig.sheetName,
-      );
-
-    if (!sheet) {
-      sheet =
-        spreadsheet.insertSheet(
+      spreadsheet
+        .getSheetByName(
           ResumeConfig.sheetName,
         );
 
+    if (
+      !sheet
+    ) {
+      sheet =
+        spreadsheet
+          .insertSheet(
+            ResumeConfig.sheetName,
+          );
+
       const headers = [
-        ...ResumeConfig.resumeFields,
+        ...ResumeConfig
+          .resumeFields,
         '面接ステータス',
         '処理ステータス',
         '処理メッセージ',
@@ -326,9 +407,10 @@ export class GasResumeCandidateRepository
           headers,
         ]);
 
-      sheet.setFrozenRows(
-        1,
-      );
+      sheet
+        .setFrozenRows(
+          1,
+        );
 
       this.formatInterviewerSheet(
         sheet,
@@ -345,7 +427,9 @@ export class GasResumeCandidateRepository
     const lastColumn =
       sheet.getLastColumn();
 
-    if (lastColumn < 1) {
+    if (
+      lastColumn < 1
+    ) {
       return [];
     }
 
@@ -359,13 +443,19 @@ export class GasResumeCandidateRepository
         )
         .getValues()[0];
 
-    if (!values) {
+    if (
+      !values
+    ) {
       return [];
     }
 
     return values.map(
-      (value: unknown): string =>
-        String(value).trim(),
+      (
+        value: unknown,
+      ): string =>
+        String(
+          value,
+        ).trim(),
     );
   }
 
@@ -376,7 +466,9 @@ export class GasResumeCandidateRepository
     processStatus: string,
     processMessage: string,
   ): unknown {
-    switch (header) {
+    switch (
+      header
+    ) {
       case '氏名':
         return this.sanitize(
           candidate.name,
@@ -555,13 +647,24 @@ export class GasResumeCandidateRepository
           )
           .build();
 
-      sheet
-        .getRange(
-          2,
-          statusIndex + 1,
+      const startRow =
+        2;
+
+      const numberOfRows =
+        Math.max(
           ResumeConfig
             .limits
             .setupRowBuffer,
+          sheet.getMaxRows() -
+            startRow +
+            1,
+        );
+
+      sheet
+        .getRange(
+          startRow,
+          statusIndex + 1,
+          numberOfRows,
           1,
         )
         .setDataValidation(
@@ -572,14 +675,17 @@ export class GasResumeCandidateRepository
     if (
       !sheet.getFilter()
     ) {
+      const filterRows =
+        Math.max(
+          sheet.getMaxRows(),
+          2,
+        );
+
       sheet
         .getRange(
           1,
           1,
-          Math.max(
-            sheet.getMaxRows(),
-            2,
-          ),
+          filterRows,
           headers.length,
         )
         .createFilter();
@@ -637,6 +743,66 @@ export class GasResumeCandidateRepository
     );
   }
 
+  private formatApplicantList(
+    sheet:
+      GoogleAppsScript.Spreadsheet.Sheet,
+  ): void {
+    const lastColumn =
+      sheet.getLastColumn();
+
+    if (
+      lastColumn < 1
+    ) {
+      return;
+    }
+
+    sheet
+      .getRange(
+        1,
+        1,
+        sheet.getMaxRows(),
+        lastColumn,
+      )
+      .setVerticalAlignment(
+        'top',
+      );
+
+    for (
+      let column = 1;
+      column <= lastColumn;
+      column++
+    ) {
+      sheet.autoResizeColumn(
+        column,
+      );
+
+      const currentWidth =
+        sheet.getColumnWidth(
+          column,
+        );
+
+      if (
+        currentWidth > 300
+      ) {
+        sheet.setColumnWidth(
+          column,
+          300,
+        );
+
+        sheet
+          .getRange(
+            1,
+            column,
+            sheet.getMaxRows(),
+            1,
+          )
+          .setWrap(
+            true,
+          );
+      }
+    }
+  }
+
   private createApplicantListFormula(
     headers: string[],
   ): string {
@@ -656,7 +822,9 @@ export class GasResumeCandidateRepository
           field,
         );
 
-      if (index === -1) {
+      if (
+        index === -1
+      ) {
         continue;
       }
 
@@ -674,6 +842,14 @@ export class GasResumeCandidateRepository
       );
     }
 
+    if (
+      selectedColumns.length === 0
+    ) {
+      throw new Error(
+        '応募者一覧へ表示できる列がありません。',
+      );
+    }
+
     const nameIndex =
       headers.indexOf(
         '氏名',
@@ -684,12 +860,32 @@ export class GasResumeCandidateRepository
         'タイムスタンプ',
       );
 
+    const processStatusIndex =
+      headers.indexOf(
+        '処理ステータス',
+      );
+
     if (
-      nameIndex === -1 ||
+      nameIndex === -1
+    ) {
+      throw new Error(
+        '応募者一覧に必要な氏名列がありません。',
+      );
+    }
+
+    if (
       timestampIndex === -1
     ) {
       throw new Error(
-        '応募者一覧に必要な氏名またはタイムスタンプ列がありません。',
+        '応募者一覧に必要なタイムスタンプ列がありません。',
+      );
+    }
+
+    if (
+      processStatusIndex === -1
+    ) {
+      throw new Error(
+        '応募者一覧に必要な処理ステータス列がありません。',
       );
     }
 
@@ -703,6 +899,11 @@ export class GasResumeCandidateRepository
         timestampIndex + 1,
       );
 
+    const processStatusColumn =
+      this.columnToLetter(
+        processStatusIndex + 1,
+      );
+
     const lastColumn =
       this.columnToLetter(
         headers.length,
@@ -712,9 +913,12 @@ export class GasResumeCandidateRepository
       `select ${selectedColumns.join(', ')}`,
       `where ${nameColumn} is not null`,
       `and ${nameColumn} <> ''`,
+      `and ${processStatusColumn} = '成功'`,
       `order by ${timestampColumn} desc`,
       `label ${labels.join(', ')}`,
-    ].join(' ');
+    ].join(
+      ' ',
+    );
 
     return (
       `=QUERY('${ResumeConfig.sheetName}'!A1:${lastColumn}, ` +
@@ -736,11 +940,12 @@ export class GasResumeCandidateRepository
     }
 
     const protections =
-      sheet.getProtections(
-        SpreadsheetApp
-          .ProtectionType
-          .SHEET,
-      );
+      sheet
+        .getProtections(
+          SpreadsheetApp
+            .ProtectionType
+            .SHEET,
+        );
 
     protections
       .filter(
@@ -776,24 +981,28 @@ export class GasResumeCandidateRepository
             .applicantList,
         );
 
-    protection.setWarningOnly(
-      false,
-    );
+    protection
+      .setWarningOnly(
+        false,
+      );
 
     const editors =
-      protection.getEditors();
+      protection
+        .getEditors();
 
     if (
       editors.length > 0
     ) {
-      protection.removeEditors(
-        editors,
-      );
+      protection
+        .removeEditors(
+          editors,
+        );
     }
 
-    protection.addEditors(
-      admins,
-    );
+    protection
+      .addEditors(
+        admins,
+      );
   }
 
   private getAdminEmails():
@@ -807,13 +1016,21 @@ export class GasResumeCandidateRepository
             .adminEmails,
         ) ?? '',
     )
-      .split(',')
+      .split(
+        ',',
+      )
       .map(
-        (email: string): string =>
-          email.trim(),
+        (
+          email: string,
+        ): string =>
+          email
+            .trim()
+            .toLowerCase(),
       )
       .filter(
-        (email: string): boolean =>
+        (
+          email: string,
+        ): boolean =>
           email !== '',
       );
   }
@@ -821,7 +1038,9 @@ export class GasResumeCandidateRepository
   private createDriveUrl(
     fileId: string,
   ): string {
-    if (!fileId) {
+    if (
+      !fileId
+    ) {
       return '';
     }
 
@@ -831,6 +1050,20 @@ export class GasResumeCandidateRepository
         fileId,
       )
     );
+  }
+
+  private normalizeName(
+    value: unknown,
+  ): string {
+    return String(
+      value ?? '',
+    )
+      .replace(
+        /[\s　]+/g,
+        '',
+      )
+      .trim()
+      .toLowerCase();
   }
 
   private normalizeEmail(
@@ -864,6 +1097,9 @@ export class GasResumeCandidateRepository
         value ?? '',
       );
 
+    /*
+     * Spreadsheet Formula Injection対策
+     */
     if (
       /^[=+\-@]/.test(
         text.trimStart(),
@@ -878,23 +1114,38 @@ export class GasResumeCandidateRepository
   private columnToLetter(
     column: number,
   ): string {
+    if (
+      column <= 0
+    ) {
+      throw new Error(
+        '列番号が不正です。',
+      );
+    }
+
     let result = '';
-    let value = column;
+
+    let value =
+      column;
 
     while (
       value > 0
     ) {
       const remainder =
-        (value - 1) % 26;
+        (value - 1) %
+        26;
 
       result =
-        String.fromCharCode(
-          65 + remainder,
-        ) + result;
+        String
+          .fromCharCode(
+            65 +
+            remainder,
+          ) +
+        result;
 
       value =
         Math.floor(
-          (value - 1) / 26,
+          (value - 1) /
+          26,
         );
     }
 

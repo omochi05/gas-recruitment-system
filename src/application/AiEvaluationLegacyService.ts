@@ -14,6 +14,7 @@ interface CriteriaRow {
 
 interface EvaluationItem {
   criterion: string;
+
   status:
     '評価済み' |
     '評価保留';
@@ -23,28 +24,22 @@ interface EvaluationItem {
   evidenceLevel:
     number;
 
-  reason:
-    string;
+  reason: string;
 
-  sourceEvidence:
-    string;
+  sourceEvidence: string;
 
-  followUpQuestion:
-    string;
+  followUpQuestion: string;
 }
 
 interface AiEvaluationResult {
   evaluations:
     EvaluationItem[];
 
-  strengths:
-    string;
+  strengths: string;
 
-  concerns:
-    string;
+  concerns: string;
 
-  summary:
-    string;
+  summary: string;
 }
 
 interface EvaluationStatistics {
@@ -57,16 +52,13 @@ interface EvaluationStatistics {
   evidenceAverage:
     number | null;
 
-  evaluatedCount:
-    number;
+  evaluatedCount: number;
 
-  holdCount:
-    number;
+  holdCount: number;
 }
 
 interface FullEvaluationResult {
-  department:
-    string;
+  department: string;
 
   aiResult:
     AiEvaluationResult;
@@ -82,15 +74,18 @@ export class AiEvaluationLegacyService {
   setupAiEvaluationSheet(): void {
     this.requireEvaluationPermission();
 
+    const sourceSpreadsheet =
+      this.getSourceSpreadsheet();
+
     const sourceSheet =
-      this.getSourceSpreadsheet()
+      sourceSpreadsheet
         .getSheetByName(
           AiConfig.interviewerSheetName,
         );
 
     if (!sourceSheet) {
       throw new Error(
-        '採用管理Spreadsheetに「面接官シート」がありません。',
+        `採用管理Spreadsheetに「${AiConfig.interviewerSheetName}」がありません。`,
       );
     }
 
@@ -155,7 +150,7 @@ export class AiEvaluationLegacyService {
     SpreadsheetApp
       .getUi()
       .alert(
-        'AI評価画面を更新しました。',
+        `AI評価画面を更新しました。\n応募者数: ${applicants.length}\n部門数: ${departments.length}`,
       );
   }
 
@@ -216,7 +211,7 @@ export class AiEvaluationLegacyService {
             ),
 
           aiModel:
-            AiConfig.geminiModel,
+            'gemini-3.6-flash',
 
           executedBy:
             this.getCurrentUserEmail(),
@@ -313,7 +308,7 @@ export class AiEvaluationLegacyService {
 
     if (!sourceSheet) {
       throw new Error(
-        '採用管理Spreadsheetに「面接官シート」がありません。',
+        `採用管理Spreadsheetに「${AiConfig.interviewerSheetName}」がありません。`,
       );
     }
 
@@ -433,27 +428,35 @@ export class AiEvaluationLegacyService {
 
       rows.push([
         department,
+
         result
           .statistics
           .weightedAverage,
+
         result
           .statistics
           .scoreStandardDeviation,
+
         result
           .statistics
           .evidenceAverage,
+
         result
           .statistics
           .evaluatedCount,
+
         result
           .statistics
           .holdCount,
+
         result
           .aiResult
           .strengths,
+
         result
           .aiResult
           .concerns,
+
         result
           .reviewPoints
           .join('\n'),
@@ -614,7 +617,7 @@ export class AiEvaluationLegacyService {
       try {
         this.restoreLatestEvaluation();
       } catch {
-        // 履歴がない場合は画面再作成自体を成功扱い
+        // 履歴が存在しない場合は無視
       }
     }
 
@@ -622,6 +625,7 @@ export class AiEvaluationLegacyService {
       'AI評価画面を再作成しました。',
     );
   }
+
   initializeAiSecurity(): void {
     const properties =
       PropertiesService
@@ -802,13 +806,17 @@ export class AiEvaluationLegacyService {
         .getResponseText()
         .split(',')
         .map(
-          (email: string): string =>
+          (
+            email: string,
+          ): string =>
             email
               .trim()
               .toLowerCase(),
         )
         .filter(
-          (email: string): boolean =>
+          (
+            email: string,
+          ): boolean =>
             email !== '',
         );
 
@@ -834,15 +842,17 @@ export class AiEvaluationLegacyService {
         .getActiveSpreadsheet();
 
     let sheet =
-      spreadsheet.getSheetByName(
-        AiConfig.criteriaSheetName,
-      );
+      spreadsheet
+        .getSheetByName(
+          AiConfig.criteriaSheetName,
+        );
 
     if (!sheet) {
       sheet =
-        spreadsheet.insertSheet(
-          AiConfig.criteriaSheetName,
-        );
+        spreadsheet
+          .insertSheet(
+            AiConfig.criteriaSheetName,
+          );
     }
 
     sheet.clear();
@@ -989,9 +999,10 @@ export class AiEvaluationLegacyService {
         .getActiveSpreadsheet();
 
     const aiSheet =
-      spreadsheet.getSheetByName(
-        AiConfig.evaluationSheetName,
-      );
+      spreadsheet
+        .getSheetByName(
+          AiConfig.evaluationSheetName,
+        );
 
     if (!aiSheet) {
       throw new Error(
@@ -1000,9 +1011,10 @@ export class AiEvaluationLegacyService {
     }
 
     const criteriaSheet =
-      spreadsheet.getSheetByName(
-        AiConfig.criteriaSheetName,
-      );
+      spreadsheet
+        .getSheetByName(
+          AiConfig.criteriaSheetName,
+        );
 
     if (!criteriaSheet) {
       throw new Error(
@@ -1138,29 +1150,29 @@ export class AiEvaluationLegacyService {
   private createAiInput(
     applicant: Applicant,
   ): Record<string, string> {
-  const result:
-    Record<string, string> = {};
+    const result:
+      Record<string, string> = {};
 
-  for (
-    const field
-    of AiConfig.aiAllowedFields
-  ) {
-    const value =
-      String(
-        applicant[field] ?? '',
-      )
-        .trim()
-        .slice(
-          0,
-          AiConfig.maxFieldLength,
-        );
+    for (
+      const field
+      of AiConfig.aiAllowedFields
+    ) {
+      const value =
+        String(
+          applicant[field] ?? '',
+        )
+          .trim()
+          .slice(
+            0,
+            AiConfig.maxFieldLength,
+          );
 
-    result[field] =
-      value;
+      result[field] =
+        value;
+    }
+
+    return result;
   }
-
-  return result;
-}
 
   private createEvaluationPrompt(
     applicant:
@@ -1208,10 +1220,36 @@ export class AiEvaluationLegacyService {
     prompt: string,
     criteria: CriteriaRow[],
   ): AiEvaluationResult {
-    const url =
-      AiConfig.geminiEndpointBase +
-      AiConfig.geminiModel +
-      ':generateContent';
+    const models = [
+      'gemini-3.6-flash',
+      AiConfig.geminiModel,
+    ]
+      .map(
+        (
+          model: string,
+        ): string =>
+          String(
+            model ?? '',
+          ).trim(),
+      )
+      .filter(
+        (
+          model: string,
+        ): boolean =>
+          model !== '' &&
+          model !==
+            'gemini-2.5-flash',
+      )
+      .filter(
+        (
+          model: string,
+          index: number,
+          values: string[],
+        ): boolean =>
+          values.indexOf(
+            model,
+          ) === index,
+      );
 
     const payload = {
       contents: [
@@ -1220,7 +1258,8 @@ export class AiEvaluationLegacyService {
 
           parts: [
             {
-              text: prompt,
+              text:
+                prompt,
             },
           ],
         },
@@ -1243,7 +1282,7 @@ export class AiEvaluationLegacyService {
                 type:
                   'OBJECT',
 
-                properties: {
+              properties: {
                   criterion: {
                     type:
                       'STRING',
@@ -1318,57 +1357,260 @@ export class AiEvaluationLegacyService {
       },
     };
 
-    const response =
-      UrlFetchApp.fetch(
-        url,
-        {
-          method:
-            'post',
+    let response:
+      GoogleAppsScript
+        .URL_Fetch
+        .HTTPResponse |
+      null = null;
 
-          contentType:
-            'application/json',
+    let status = 0;
 
-          headers: {
-            'x-goog-api-key':
-              apiKey,
-          },
+    let body = '';
 
-          payload:
-            JSON.stringify(
-              payload,
-            ),
+    let lastErrorMessage =
+      '';
 
-          muteHttpExceptions:
-            true,
-        },
+    const maxAttemptsPerModel =
+      4;
+
+    for (
+      const model
+      of models
+    ) {
+      const url =
+        AiConfig
+          .geminiEndpointBase +
+        model +
+        ':generateContent';
+
+      console.log(
+        `Geminiモデル試行: ${model}`,
       );
 
-    const status =
-      response.getResponseCode();
+      for (
+        let attempt = 1;
+        attempt <=
+          maxAttemptsPerModel;
+        attempt++
+      ) {
+        try {
+          response =
+            UrlFetchApp.fetch(
+              url,
+              {
+                method:
+                  'post',
 
-    const body =
-      response.getContentText();
+                contentType:
+                  'application/json',
+
+                headers: {
+                  'x-goog-api-key':
+                    apiKey,
+                },
+
+                payload:
+                  JSON.stringify(
+                    payload,
+                  ),
+
+                muteHttpExceptions:
+                  true,
+              },
+            );
+        } catch (
+          error: unknown
+        ) {
+          lastErrorMessage =
+            error instanceof Error
+              ? error.message
+              : String(
+                  error,
+                );
+
+          console.error(
+            [
+              'Gemini API接続失敗',
+              `model=${model}`,
+              `attempt=${attempt}`,
+              lastErrorMessage,
+            ].join(
+              ' / ',
+            ),
+          );
+
+          if (
+            attempt <
+            maxAttemptsPerModel
+          ) {
+            this.sleepWithBackoff(
+              attempt,
+            );
+
+            continue;
+          }
+
+          break;
+        }
+
+        status =
+          response
+            .getResponseCode();
+
+        body =
+          response
+            .getContentText();
+
+        if (
+          status === 200
+        ) {
+          console.log(
+            `Gemini API成功: ${model}`,
+          );
+
+          break;
+        }
+
+        lastErrorMessage =
+          body.slice(
+            0,
+            500,
+          );
+
+        const retryable =
+          status === 408 ||
+          status === 429 ||
+          status === 500 ||
+          status === 502 ||
+          status === 503 ||
+          status === 504;
+
+        if (
+          retryable
+        ) {
+          console.warn(
+            [
+              'Gemini API一時エラー',
+              `HTTP=${status}`,
+              `model=${model}`,
+              `attempt=${attempt}/${maxAttemptsPerModel}`,
+            ].join(
+              ' / ',
+            ),
+          );
+
+          if (
+            attempt <
+            maxAttemptsPerModel
+          ) {
+            this.sleepWithBackoff(
+              attempt,
+            );
+
+            continue;
+          }
+
+          break;
+        }
+
+        if (
+          status === 400 ||
+          status === 404
+        ) {
+          console.warn(
+            [
+              'Geminiモデル利用不可',
+              `HTTP=${status}`,
+              `model=${model}`,
+              lastErrorMessage,
+            ].join(
+              ' / ',
+            ),
+          );
+
+          break;
+        }
+
+        if (
+          status === 401 ||
+          status === 403
+        ) {
+          throw new Error(
+            `Gemini API認証エラー HTTP ${status}: ${lastErrorMessage}`,
+          );
+        }
+
+        throw new Error(
+          `Gemini APIエラー HTTP ${status}: ${lastErrorMessage}`,
+        );
+      }
+
+      if (
+        response &&
+        status === 200
+      ) {
+        break;
+      }
+
+      response =
+        null;
+    }
 
     if (
+      !response ||
       status !== 200
     ) {
       throw new Error(
-        `Gemini APIエラー HTTP ${status}: ${body.slice(0, 500)}`,
+        [
+          'Gemini APIが利用できません。',
+          `試行モデル: ${models.join(
+            ', ',
+          )}`,
+          `最終HTTP: ${status}`,
+          lastErrorMessage
+            ? `詳細: ${lastErrorMessage}`
+            : '',
+        ]
+          .filter(
+            (
+              value: string,
+            ): boolean =>
+              value !== '',
+          )
+          .join(
+            ' ',
+          ),
       );
     }
 
-    const json =
-      JSON.parse(
-        body,
-      ) as {
-        candidates?: Array<{
-          content?: {
-            parts?: Array<{
-              text?: string;
-            }>;
-          };
-        }>;
-      };
+    let json: {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string;
+          }>;
+        };
+      }>;
+    };
+
+    try {
+      json =
+        JSON.parse(
+          body,
+        ) as {
+          candidates?: Array<{
+            content?: {
+              parts?: Array<{
+                text?: string;
+              }>;
+            };
+          }>;
+        };
+    } catch {
+      throw new Error(
+        'Gemini APIレスポンスのJSON解析に失敗しました。',
+      );
+    }
 
     const text =
       json
@@ -1383,27 +1625,59 @@ export class AiEvaluationLegacyService {
       );
     }
 
-    const result =
-      JSON.parse(
-        text
-          .replace(
-            /^```json\s*/i,
-            '',
-          )
-          .replace(
-            /^```\s*/,
-            '',
-          )
-          .replace(
-            /```$/,
-            '',
-          )
-          .trim(),
-      ) as AiEvaluationResult;
+    let result:
+      AiEvaluationResult;
 
-    return this.validateAiEvaluationResult(
-      result,
-      criteria,
+    try {
+      result =
+        JSON.parse(
+          text
+            .replace(
+              /^```json\s*/i,
+              '',
+            )
+            .replace(
+              /^```\s*/,
+              '',
+            )
+            .replace(
+              /```$/,
+              '',
+            )
+            .trim(),
+        ) as AiEvaluationResult;
+    } catch {
+      throw new Error(
+        'Geminiが返したAI評価結果をJSONとして解析できませんでした。',
+      );
+    }
+
+    return this
+      .validateAiEvaluationResult(
+        result,
+        criteria,
+      );
+  }
+
+  private sleepWithBackoff(
+    attempt: number,
+  ): void {
+    const exponentialDelay =
+      Math.pow(
+        2,
+        attempt - 1,
+      ) *
+      1000;
+
+    const jitter =
+      Math.floor(
+        Math.random() *
+        750,
+      );
+
+    Utilities.sleep(
+      exponentialDelay +
+      jitter,
     );
   }
 
@@ -1548,22 +1822,25 @@ export class AiEvaluationLegacyService {
     }
 
     const evaluated =
-      result.evaluations.filter(
-        (
-          item: EvaluationItem,
-        ): boolean =>
-          item.status ===
-          '評価済み',
-      );
+      result.evaluations
+        .filter(
+          (
+            item: EvaluationItem,
+          ): boolean =>
+            item.status ===
+            '評価済み',
+        );
 
     const holdCount =
-      result.evaluations.filter(
-        (
-          item: EvaluationItem,
-        ): boolean =>
-          item.status ===
-          '評価保留',
-      ).length;
+      result.evaluations
+        .filter(
+          (
+            item: EvaluationItem,
+          ): boolean =>
+            item.status ===
+            '評価保留',
+        )
+        .length;
 
     if (
       evaluated.length === 0
@@ -1732,6 +2009,7 @@ export class AiEvaluationLegacyService {
       ),
     ];
   }
+
   private createCandidateKey(
     applicant: Applicant,
   ): string {
@@ -1747,12 +2025,16 @@ export class AiEvaluationLegacyService {
 
     const fileName =
       String(
-        applicant['元ファイル名'] ?? '',
+        applicant[
+          '元ファイル名'
+        ] ?? '',
       ).trim();
 
     const name =
       String(
-        applicant['氏名'] ?? '',
+        applicant[
+          '氏名'
+        ] ?? '',
       ).trim();
 
     const source =
@@ -1771,7 +2053,9 @@ export class AiEvaluationLegacyService {
 
     return digest
       .map(
-        (value: number): string => {
+        (
+          value: number,
+        ): string => {
           const normalized =
             (value + 256) % 256;
 
@@ -1822,7 +2106,9 @@ export class AiEvaluationLegacyService {
 
     return digest
       .map(
-        (value: number): string => {
+        (
+          value: number,
+        ): string => {
           const normalizedValue =
             (value + 256) % 256;
 
@@ -2082,10 +2368,34 @@ export class AiEvaluationLegacyService {
         (
           applicant:
             Applicant,
-        ): boolean =>
-          String(
-            applicant['氏名'] ?? '',
-          ).trim() !== '',
+        ): boolean => {
+          const name =
+            String(
+              applicant[
+                '氏名'
+              ] ?? '',
+            ).trim();
+
+          const processStatus =
+            String(
+              applicant[
+                '処理ステータス'
+              ] ?? '',
+            ).trim();
+
+          if (!name) {
+            return false;
+          }
+
+          if (
+            processStatus ===
+            'エラー'
+          ) {
+            return false;
+          }
+
+          return true;
+        },
       );
   }
 
@@ -2094,18 +2404,26 @@ export class AiEvaluationLegacyService {
   ): string {
     const name =
       String(
-        applicant['氏名'] ??
-        '氏名不明',
+        applicant[
+          '氏名'
+        ] ?? '',
       ).trim();
+
+    if (!name) {
+      return '';
+    }
 
     const fileName =
       String(
-        applicant['元ファイル名'] ??
-        'ファイル不明',
+        applicant[
+          '元ファイル名'
+        ] ?? '',
       ).trim();
 
     const timestamp =
-      applicant['タイムスタンプ'];
+      applicant[
+        'タイムスタンプ'
+      ];
 
     let timestampText = '';
 
@@ -2127,11 +2445,28 @@ export class AiEvaluationLegacyService {
         ).trim();
     }
 
-    return [
-      name,
-      fileName,
-      timestampText,
-    ].join(
+    const parts:
+      string[] = [
+        name,
+      ];
+
+    if (
+      fileName
+    ) {
+      parts.push(
+        fileName,
+      );
+    }
+
+    if (
+      timestampText
+    ) {
+      parts.push(
+        timestampText,
+      );
+    }
+
+    return parts.join(
       ' ｜ ',
     );
   }
@@ -2256,6 +2591,45 @@ export class AiEvaluationLegacyService {
           .getValue() ?? '',
       ).trim();
 
+    const applicantValues = [
+      ...new Set(
+        applicants
+          .map(
+            (
+              applicant:
+                Applicant,
+            ): string =>
+              this.createSelectorValue(
+                applicant,
+              ),
+          )
+          .filter(
+            (
+              value: string,
+            ): boolean =>
+              value !== '',
+          ),
+      ),
+    ];
+
+    const departmentValues = [
+      ...new Set(
+        departments
+          .map(
+            (
+              value: string,
+            ): string =>
+              value.trim(),
+          )
+          .filter(
+            (
+              value: string,
+            ): boolean =>
+              value !== '',
+          ),
+      ),
+    ];
+
     sheet.clear();
 
     sheet
@@ -2289,34 +2663,70 @@ export class AiEvaluationLegacyService {
         '評価部門',
       );
 
-    const applicantValues =
-      applicants.map(
-        (
-          applicant:
-            Applicant,
-        ): string =>
-          this.createSelectorValue(
-            applicant,
-          ),
-      );
-
     const applicantCell =
       sheet.getRange(
         'B2',
       );
 
+    const departmentCell =
+      sheet.getRange(
+        'B3',
+      );
+
     applicantCell
+      .clearContent()
       .clearDataValidations();
+
+    departmentCell
+      .clearContent()
+      .clearDataValidations();
+
+    const applicantHelperColumn =
+      10;
+
+    const departmentHelperColumn =
+      11;
+
+    sheet
+      .getRange(
+        1,
+        applicantHelperColumn,
+        sheet.getMaxRows(),
+        2,
+      )
+      .clearContent();
 
     if (
       applicantValues.length > 0
     ) {
+      const applicantRows =
+        applicantValues.map(
+          (
+            value: string,
+          ): string[] => [
+            value,
+          ],
+        );
+
+      const applicantSourceRange =
+        sheet.getRange(
+          1,
+          applicantHelperColumn,
+          applicantRows.length,
+          1,
+        );
+
+      applicantSourceRange
+        .setValues(
+          applicantRows,
+        );
+
       applicantCell
         .setDataValidation(
           SpreadsheetApp
             .newDataValidation()
-            .requireValueInList(
-              applicantValues,
+            .requireValueInRange(
+              applicantSourceRange,
               true,
             )
             .setAllowInvalid(
@@ -2326,23 +2736,37 @@ export class AiEvaluationLegacyService {
         );
     }
 
-    const departmentCell =
-      sheet.getRange(
-        'B3',
-      );
-
-    departmentCell
-      .clearDataValidations();
-
     if (
-      departments.length > 0
+      departmentValues.length > 0
     ) {
+      const departmentRows =
+        departmentValues.map(
+          (
+            value: string,
+          ): string[] => [
+            value,
+          ],
+        );
+
+      const departmentSourceRange =
+        sheet.getRange(
+          1,
+          departmentHelperColumn,
+          departmentRows.length,
+          1,
+        );
+
+      departmentSourceRange
+        .setValues(
+          departmentRows,
+        );
+
       departmentCell
         .setDataValidation(
           SpreadsheetApp
             .newDataValidation()
-            .requireValueInList(
-              departments,
+            .requireValueInRange(
+              departmentSourceRange,
               true,
             )
             .setAllowInvalid(
@@ -2362,17 +2786,31 @@ export class AiEvaluationLegacyService {
         .setValue(
           previousSelector,
         );
+    } else if (
+      applicantValues.length > 0
+    ) {
+      applicantCell
+        .setValue(
+          applicantValues[0],
+        );
     }
 
     if (
       previousDepartment &&
-      departments.includes(
+      departmentValues.includes(
         previousDepartment,
       )
     ) {
       departmentCell
         .setValue(
           previousDepartment,
+        );
+    } else if (
+      departmentValues.length > 0
+    ) {
+      departmentCell
+        .setValue(
+          departmentValues[0],
         );
     }
 
@@ -2440,6 +2878,17 @@ export class AiEvaluationLegacyService {
       .setWrap(
         true,
       );
+
+    try {
+      sheet.hideColumns(
+        applicantHelperColumn,
+        2,
+      );
+    } catch {
+      // 既に非表示の場合などは無視
+    }
+
+    SpreadsheetApp.flush();
   }
 
   private showApplicant(
@@ -2453,30 +2902,37 @@ export class AiEvaluationLegacyService {
           '氏名',
           applicant['氏名'] ?? '',
         ],
+
         [
           '最終学歴',
           applicant['最終学歴'] ?? '',
         ],
+
         [
           '学歴サマリー',
           applicant['学歴サマリー'] ?? '',
         ],
+
         [
           '直近の職歴',
           applicant['直近の職歴'] ?? '',
         ],
+
         [
           '職歴サマリー',
           applicant['職歴サマリー'] ?? '',
         ],
+
         [
           '保有資格',
           applicant['保有資格'] ?? '',
         ],
+
         [
           '自己PR要約',
           applicant['自己PR要約'] ?? '',
         ],
+
         [
           '特記事項',
           applicant['特記事項'] ?? '',
@@ -2827,13 +3283,17 @@ export class AiEvaluationLegacyService {
       )
         .split(',')
         .map(
-          (email: string): string =>
+          (
+            email: string,
+          ): string =>
             email
               .trim()
               .toLowerCase(),
         )
         .filter(
-          (email: string): boolean =>
+          (
+            email: string,
+          ): boolean =>
             email !== '',
         );
 
@@ -2850,6 +3310,22 @@ export class AiEvaluationLegacyService {
 
   private getSourceSpreadsheet():
     GoogleAppsScript.Spreadsheet.Spreadsheet {
+    const activeSpreadsheet =
+      SpreadsheetApp
+        .getActiveSpreadsheet();
+
+    const activeInterviewerSheet =
+      activeSpreadsheet
+        .getSheetByName(
+          AiConfig.interviewerSheetName,
+        );
+
+    if (
+      activeInterviewerSheet
+    ) {
+      return activeSpreadsheet;
+    }
+
     const spreadsheetId =
       this.requireProperty(
         AiConfig
