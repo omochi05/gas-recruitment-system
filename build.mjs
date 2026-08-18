@@ -4,6 +4,7 @@ const publicFunctions = [
   'onOpen',
   'onSelectionChange',
   'onEdit',
+  'formatAllUiSheets',
 
   'setupApiKey',
   'setupFolders',
